@@ -1,0 +1,148 @@
+name: CI
+
+# Two independent jobs, mirroring the local developer workflow documented in
+# README.md:
+#
+#   - check:       everything `make check` already does locally (no Docker
+#                   required: gofmt, go vet, golangci-lint, `go test
+#                   -race ./...`), plus gosec and govulncheck.
+#   - integration: every `-tags=integration` suite (Blocos B-F's real-
+#                   Postgres tests, via testcontainers-go -- see
+#                   internal/platform/db/testsupport_integration.go --
+#                   including internal/platform/httpx's T19 end-to-end
+#                   proof slice), plus the combined coverage gate.
+#
+# See docs/adr/0004-ci-pipeline-and-coverage-gate.md for the rationale
+# behind this split and for why the coverage gate is computed the way it
+# is below.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GOLANGCI_LINT_VERSION: v1.64.8
+  GOSEC_VERSION: v2.21.4
+  MIN_COVERAGE: "80"
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        run: |
+          files=$(gofmt -l .)
+          if [ -n "$files" ]; then
+            echo "$files"
+            echo "gofmt: the file(s) above are not gofmt-formatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          args: --timeout=5m
+
+      # Mirrors `make test`/`make check` exactly, -count=1 included: see
+      # the Makefile's own comment on why ./architecture/... specifically
+      # requires it (its tests load packages from disk at run time via
+      # golang.org/x/tools/go/packages, a dynamic read Go's build cache
+      # does not track as a test input).
+      - name: go test (race, no Docker required)
+        run: go test -race -count=1 -cover ./...
+
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@${{ env.GOSEC_VERSION }}
+
+      - name: gosec
+        run: gosec -exclude-dir=architecture/testdata ./...
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: govulncheck
+        run: govulncheck ./...
+
+  integration:
+    name: integration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # GitHub's ubuntu-latest runners already have a working Docker daemon
+      # (used here as testcontainers-go's backend, via
+      # internal/platform/db.TestPostgres) -- no `services:` Postgres block
+      # and no Docker-in-Docker setup is needed. Every -tags=integration
+      # suite across Blocos B-F, including
+      # internal/platform/httpx/e2e_integration_test.go (T19), runs here.
+      - name: Docker sanity check
+        run: docker info
+
+      - name: go test -tags=integration (race, real Postgres via testcontainers)
+        run: go test -tags=integration -race -count=1 ./...
+
+      # Coverage gate: computed from the COMBINED profile (unit +
+      # integration tests together), with -coverpkg=./... so a package's
+      # coverage credit includes statements exercised by a DIFFERENT
+      # package's test (e.g. internal/platform/app's database-backed
+      # handlers, only ever exercised by internal/platform/httpx's E2E
+      # test). ./architecture/... is intentionally excluded from this
+      # specific run: its own tests dynamically load and compile the
+      # module's package graph via golang.org/x/tools/go/packages, which
+      # combined with -coverpkg=./... causes runaway recompilation instead
+      # of the ~30s it normally takes (see
+      # docs/adr/0004-ci-pipeline-and-coverage-gate.md). The fitness
+      # function itself is already verified above, in the "go test
+      # -tags=integration ... ./..." step, and (without Docker) in the
+      # check job's own `go test ./...` step.
+      - name: Compute combined coverage (excluding architecture) and gate at ${{ env.MIN_COVERAGE }}%
+        run: |
+          set -euo pipefail
+          PKGS=$(go list ./... | grep -v '/architecture' | paste -sd, -)
+          TESTPKGS=$(go list ./... | grep -v '/architecture')
+          go test -tags=integration -race -count=1 \
+            -coverpkg="$PKGS" -coverprofile=coverage.out -covermode=atomic \
+            $TESTPKGS
+
+          go tool cover -func=coverage.out | tee coverage.txt
+          total=$(grep -E '^total:' coverage.txt | awk '{print $3}' | tr -d '%')
+          echo "Combined coverage: ${total}% (floor: ${MIN_COVERAGE}%)"
+          awk -v total="$total" -v min="$MIN_COVERAGE" \
+            'BEGIN { if (total + 0 < min + 0) { exit 1 } }' \
+            || { echo "::error::combined coverage ${total}% is below the ${MIN_COVERAGE}% floor"; exit 1; }
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage.out
+          retention-days: 14
