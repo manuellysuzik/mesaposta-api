@@ -27,6 +27,13 @@ import (
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/config"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/db"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/httpx"
+
+	catalighttp "github.com/manuellysuzik/mesaposta-api/internal/modules/catalog/infrastructure/http"
+	catalogpg "github.com/manuellysuzik/mesaposta-api/internal/modules/catalog/infrastructure/postgres"
+	communityhttp "github.com/manuellysuzik/mesaposta-api/internal/modules/community/infrastructure/http"
+	communitypg "github.com/manuellysuzik/mesaposta-api/internal/modules/community/infrastructure/postgres"
+	crmhttp "github.com/manuellysuzik/mesaposta-api/internal/modules/crm/infrastructure/http"
+	crmpg "github.com/manuellysuzik/mesaposta-api/internal/modules/crm/infrastructure/postgres"
 	operationshttp "github.com/manuellysuzik/mesaposta-api/internal/modules/operations/infrastructure/http"
 	operationspg "github.com/manuellysuzik/mesaposta-api/internal/modules/operations/infrastructure/postgres"
 )
@@ -92,8 +99,10 @@ func NewApp(cfg config.Config, pool *db.Pool, logger *slog.Logger, verifier *tok
 	router.Route("/v1", func(r chi.Router) {
 		r.Use(auth.Authenticate(verifier))
 		if pool != nil {
-			uow := operationspg.NewUnitOfWork(pool)
-			operationshttp.Mount(r, uow)
+			operationshttp.Mount(r, operationspg.NewUnitOfWork(pool))
+			catalighttp.Mount(r, catalogpg.NewUnitOfWork(pool))
+			crmhttp.Mount(r, crmpg.NewUnitOfWork(pool))
+			communityhttp.Mount(r, communitypg.NewUnitOfWork(pool))
 		}
 	})
 
