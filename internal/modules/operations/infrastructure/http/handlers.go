@@ -12,8 +12,7 @@ import (
 
 func getPurchaseOrderHandler(uow domain.UnitOfWork) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenantID, err := tenant.From(r.Context())
-		if err != nil {
+		if _, err := tenant.From(r.Context()); err != nil {
 			httpx.RespondError(w, r, err)
 			return
 		}
@@ -22,13 +21,9 @@ func getPurchaseOrderHandler(uow domain.UnitOfWork) http.HandlerFunc {
 			httpx.RespondError(w, r, err)
 			return
 		}
-		order, err := application.NewGetPurchaseOrder(uow).Execute(r.Context(), tenantID, id)
+		order, err := application.GetPurchaseOrder(r.Context(), uow, id)
 		if err != nil {
 			httpx.RespondError(w, r, err)
-			return
-		}
-		if order == nil {
-			httpx.RespondError(w, r, httpx.NotFoundError("purchase_order_not_found", "purchase order not found", nil))
 			return
 		}
 		resp, err := newPurchaseOrderResponse(order)
@@ -81,12 +76,20 @@ func createStockItemHandler(uow domain.UnitOfWork) http.HandlerFunc {
 			}
 			supplierID = &sid
 		}
-		item, err := application.NewCreateStockItem(uow).Execute(r.Context(), tenantID, req.Name, unit, qty, minQty, cost, supplierID)
+		item, err := application.CreateStockItem(r.Context(), uow, application.CreateStockItemInput{
+			TenantID:    tenantID,
+			Name:        req.Name,
+			Unit:        unit,
+			Quantity:    qty,
+			MinQuantity: minQty,
+			CostPerUnit: cost,
+			SupplierID:  supplierID,
+		})
 		if err != nil {
 			httpx.RespondError(w, r, err)
 			return
 		}
-		httpx.RespondData(w, r, http.StatusCreated, newStockItemResponse(item), nil)
+		httpx.RespondData(w, r, http.StatusCreated, newStockItemResponse(&item), nil)
 	}
 }
 
@@ -124,14 +127,23 @@ func createPurchaseOrderHandler(uow domain.UnitOfWork) http.HandlerFunc {
 				httpx.RespondError(w, r, err)
 				return
 			}
-			items[i] = domain.PurchaseOrderItem{StockItemID: stockID, Quantity: qty, CostPerUnit: cost}
+			item, err := domain.NewPurchaseOrderItem(stockID, qty, cost)
+			if err != nil {
+				httpx.RespondError(w, r, err)
+				return
+			}
+			items[i] = item
 		}
-		order, err := application.NewCreatePurchaseOrder(uow).Execute(r.Context(), tenantID, supplierID, items)
+		order, err := application.CreatePurchaseOrder(r.Context(), uow, application.CreatePurchaseOrderInput{
+			TenantID:   tenantID,
+			SupplierID: supplierID,
+			Items:      items,
+		})
 		if err != nil {
 			httpx.RespondError(w, r, err)
 			return
 		}
-		resp, err := newPurchaseOrderResponse(order)
+		resp, err := newPurchaseOrderResponse(&order)
 		if err != nil {
 			httpx.RespondError(w, r, err)
 			return
@@ -142,8 +154,7 @@ func createPurchaseOrderHandler(uow domain.UnitOfWork) http.HandlerFunc {
 
 func registerStockMovementHandler(uow domain.UnitOfWork) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenantID, err := tenant.From(r.Context())
-		if err != nil {
+		if _, err := tenant.From(r.Context()); err != nil {
 			httpx.RespondError(w, r, err)
 			return
 		}
@@ -167,14 +178,19 @@ func registerStockMovementHandler(uow domain.UnitOfWork) http.HandlerFunc {
 			httpx.RespondError(w, r, err)
 			return
 		}
-		_, err = application.NewRegisterStockMovement(uow).Execute(r.Context(), tenantID, id, movType, qty, req.Reason, time.Now().UTC())
+		err = application.RegisterStockMovement(r.Context(), uow, application.RegisterStockMovementInput{
+			StockItemID:  id,
+			MovementType: movType,
+			Quantity:     qty,
+			Reason:       req.Reason,
+		})
 		if err != nil {
 			httpx.RespondError(w, r, err)
 			return
 		}
-		item, _ := application.NewGetStockItem(uow).Execute(r.Context(), tenantID, id)
-		if item == nil {
-			httpx.RespondError(w, r, httpx.NotFoundError("stock_item_not_found", "stock item not found", nil))
+		item, err := application.GetStockItem(r.Context(), uow, id)
+		if err != nil {
+			httpx.RespondError(w, r, err)
 			return
 		}
 		httpx.RespondData(w, r, http.StatusCreated, newStockItemResponse(item), nil)
@@ -183,8 +199,7 @@ func registerStockMovementHandler(uow domain.UnitOfWork) http.HandlerFunc {
 
 func receivePurchaseOrderHandler(uow domain.UnitOfWork) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenantID, err := tenant.From(r.Context())
-		if err != nil {
+		if _, err := tenant.From(r.Context()); err != nil {
 			httpx.RespondError(w, r, err)
 			return
 		}
@@ -193,14 +208,13 @@ func receivePurchaseOrderHandler(uow domain.UnitOfWork) http.HandlerFunc {
 			httpx.RespondError(w, r, err)
 			return
 		}
-		_, err = application.NewReceivePurchaseOrder(uow).Execute(r.Context(), tenantID, id, time.Now().UTC())
-		if err != nil {
+		if err := application.ReceivePurchaseOrder(r.Context(), uow, id, time.Now().UTC()); err != nil {
 			httpx.RespondError(w, r, err)
 			return
 		}
-		order, _ := application.NewGetPurchaseOrder(uow).Execute(r.Context(), tenantID, id)
-		if order == nil {
-			httpx.RespondError(w, r, httpx.NotFoundError("purchase_order_not_found", "purchase order not found", nil))
+		order, err := application.GetPurchaseOrder(r.Context(), uow, id)
+		if err != nil {
+			httpx.RespondError(w, r, err)
 			return
 		}
 		resp, err := newPurchaseOrderResponse(order)

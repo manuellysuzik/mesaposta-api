@@ -12,8 +12,7 @@ import (
 // getStockItemHandler returns a handler for GET /v1/stock-items/{id}.
 func getStockItemHandler(uow domain.UnitOfWork) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenantID, err := tenant.From(r.Context())
-		if err != nil {
+		if _, err := tenant.From(r.Context()); err != nil {
 			httpx.RespondError(w, r, err)
 			return
 		}
@@ -24,15 +23,9 @@ func getStockItemHandler(uow domain.UnitOfWork) http.HandlerFunc {
 			return
 		}
 
-		getStockItem := application.NewGetStockItem(uow)
-		item, err := getStockItem.Execute(r.Context(), tenantID, id)
+		item, err := application.GetStockItem(r.Context(), uow, id)
 		if err != nil {
 			httpx.RespondError(w, r, err)
-			return
-		}
-
-		if item == nil {
-			httpx.RespondError(w, r, httpx.NotFoundError("stock_item_not_found", "stock item not found", nil))
 			return
 		}
 

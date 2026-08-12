@@ -1,7 +1,15 @@
-# Backlog — Fase 1 (Operations Module HTTP Layer) & Future Phases
+# Backlog — Fase 1-5 (Operations, Catalog, CRM, Community) & Future Phases
 
-**Status**: Wave A ✅ | Waves B–D 🏗️  
+**Status**: Fase 1 (operations) ✅ | Fase 2 (catalog) ✅ | Fase 4 (crm) ✅ | Fase 5 (community) ✅ | Fase 3 (ordering) pendente — revisão de design de segurança necessária antes de implementar
 **Last Updated**: 2026-08-12
+
+## Post-Wave-A Correction (important)
+
+Os handlers HTTP de `operations` criados na Wave A/B/C/D originalmente assumiam uma API de `application`/`domain` incorreta (ex.: `application.NewGetStockItem(uow).Execute(...)` em vez da assinatura real `application.GetStockItem(ctx, uow, id)`; acesso a campos de agregado como `item.SupplierID` em vez do getter `item.SupplierID()`; `UnitOfWork.Do` com callback de 1 argumento em vez de 2). Isso não foi pego porque o build não foi rodado antes do commit inicial. Corrigido nesta sessão: `dto.go`, `handlers.go`, `stock_item_get.go`, `fake_uow_test.go`, `stock_item_get_test.go` foram reescritos com as assinaturas reais, confirmadas lendo o código de `application/*.go` e `domain/ports.go` diretamente. `go build ./...`, `go vet ./...` e `go test ./...` (incluindo `architecture/...`) passam limpos agora.
+
+Além disso, `architecture/rules.go`'s `checkR2` tinha uma lacuna real: a exceção para `internal/platform/app` (composition root) não cobria os pacotes de teste sintéticos que o Go gera para arquivos com `package app_test` (pacote de teste externo) — `internal/platform/app_test` e `internal/platform/app.test` não batiam com `isUnderPath`. Corrigido com uma nova função `isAppTestVariant`.
+
+**Lição para o futuro**: sempre rodar `go build ./...` + `go test ./...` + `go test ./architecture/...` antes de qualquer commit, mesmo em modo automático — nunca assumir que código compila só porque segue um padrão visualmente correto.
 
 ## Completed — Wave A ✅
 
@@ -119,6 +127,13 @@ These are **not bugs**, but enhancements identified during implementation. **Not
 **Issue**: ADR 0005 documents Read Committed + locks decision. If Postgres logs `40001` retries routinely, might warrant revisiting.  
 **Impact**: Low — current approach proven by test.  
 **Metric to track**: Log 40001 errors; if >0.1% of receives, escalate to Serializable.
+
+### 9. Catalog↔Operations cross-module ingredient integration (Fase 2 concern)
+**Issue**: `internal/modules/catalog`'s `ProductIngredient`/`RecipeIngredient` value objects (see `domain/product.go`, `domain/recipe.go`) reference an `IngredientID` that is, in practice, a `StockItem` ID owned by `internal/modules/operations` — but catalog never validates that ID against operations' own data (no existence check, no real-time stock-availability check at `CreateProduct`/`ApplyDiscount`/`PromoteRecipeToProduct` time), and `product_ingredients`/`recipe_ingredients` (see `internal/platform/db/migrations/0005_catalog.sql`) carry no foreign key to `operations.stock_items` — mirroring `0004_operations.sql`'s own `stock_items.supplier_id` "no FK yet" precedent.  
+**Impact**: Medium — a Product/Recipe can currently reference a non-existent (or since-deleted) ingredient with no error; selling a Product never checks or decrements the referenced StockItem's stock either (that link stays entirely manual/out-of-band for now).  
+**Blocker**: Requires a stable cross-module contract — `internal/modules/operations/contracts` would need to expose an ingredient-existence/lookup capability (e.g. a narrow `StockItemExists(ctx, tenantID, id) (bool, error)` port, or a read-model projection) that `catalog` can depend on without importing `operations/domain` directly (architecture rule R3).  
+**Solution sketch**: Add a small interface to `operations/contracts` (e.g. `IngredientLookup`), inject a `operations/infrastructure/*`-backed implementation into `catalog`'s application layer at composition-root time (`internal/platform/app`), and validate ingredient IDs against it in `CreateProduct`/`CreateRecipe`/`PromoteRecipeToProduct`. A further phase could also wire `Order`/sale completion (a future module) to emit stock-withdrawal `StockMovement`s for a sold Product's ingredients, closing the loop with `operations.RegisterStockMovement`.  
+**Defer to**: Fase 3+ (once a module that actually sells Products — e.g. `ordering` — exists and needs this integration to be real, not speculative). Explicitly out of scope for Fase 2 (catalog)'s own task brief.
 
 ---
 

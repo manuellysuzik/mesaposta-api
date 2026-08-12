@@ -120,6 +120,18 @@ func containsSegment(pkgPath, segment string) bool {
 // isUnderPath reports whether base appears as a proper path-segment
 // sequence anywhere in pkgPath (e.g. isUnderPath("a/b/internal/platform/foo",
 // "internal/platform") is true).
+// isAppTestVariant reports whether pkgPath is one of the synthetic package
+// identities Go's loader produces for internal/platform/app's own test
+// files: the external test package ("internal/platform/app_test", from
+// app_test.go's "package app_test" declaration) or the compiled test
+// binary ("internal/platform/app.test"). See checkR2's doc comment for why
+// these need their own check instead of falling under isUnderPath's
+// directory-segment definition of "internal/platform/app".
+func isAppTestVariant(pkgPath string) bool {
+	return strings.HasSuffix(pkgPath, "internal/platform/app_test") ||
+		strings.HasSuffix(pkgPath, "internal/platform/app.test")
+}
+
 func isUnderPath(pkgPath, base string) bool {
 	if pkgPath == base {
 		return true
@@ -289,6 +301,15 @@ func checkR1(pkgs []*packages.Package) ([]Violation, error) {
 // "wire everything together" role cmd/api does, and modules are expected to
 // be plugged into it directly (see T6.2). This is the ONLY carve-out to
 // R2 -- every other internal/platform/** package must stay clean.
+//
+// The exemption also covers internal/platform/app's own test packages
+// (isAppTestVariant): Go's package loader (with Tests: true) reports the
+// external test package for app as "internal/platform/app_test" and the
+// compiled test binary as "internal/platform/app.test" -- neither PkgPath
+// is "under" internal/platform/app by isUnderPath's directory-segment
+// definition, so without this, app_test.go legitimately importing
+// operations/application to build fixtures for the composition root's own
+// tests would incorrectly trip R2.
 func checkR2(pkgs []*packages.Package) ([]Violation, error) {
 	var violations []Violation
 
@@ -296,7 +317,7 @@ func checkR2(pkgs []*packages.Package) ([]Violation, error) {
 		if !isUnderPath(pkg.PkgPath, "internal/platform") {
 			continue
 		}
-		if isUnderPath(pkg.PkgPath, "internal/platform/app") {
+		if isUnderPath(pkg.PkgPath, "internal/platform/app") || isAppTestVariant(pkg.PkgPath) {
 			continue
 		}
 
