@@ -104,7 +104,12 @@ the first place:
   one-way: modules depend on the platform, never the reverse. If platform
   code seems to need something module-specific, that's a sign the
   abstraction belongs in the module (or the platform package's scope is
-  wrong), not a reason to add the import.
+  wrong), not a reason to add the import. The single exception is
+  `internal/platform/app`, the HTTP composition root (see R5, and the doc
+  comment on `internal/platform/app.NewApp`): it is allowed to import
+  `internal/modules/**` freely, exactly like `cmd/api`, because wiring
+  modules into the final `http.Handler` is its entire purpose. No other
+  `internal/platform/**` package gets this exception.
 - **R3 — modules don't reach into each other's internals.**
   `internal/modules/<a>/**` may only import
   `internal/modules/<b>/**` through `internal/modules/<b>/contracts`

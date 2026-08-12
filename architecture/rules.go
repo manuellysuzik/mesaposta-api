@@ -68,33 +68,25 @@ var Rules = []Rule{
 		Check:      checkR1,
 	},
 	{
-		Name:        "R2",
-		Description: "internal/platform/** must not import internal/modules/**",
-		// TODO(Fase 1): internal/modules/** does not exist yet in the real
-		// repository, so this rule currently has nothing to check against
-		// in production. Once Phase 1 introduces modules/, this MUST start
-		// finding candidate packages; the fixture suite already proves the
-		// engine itself detects the violation (see
-		// testdata/fixtures/platform_imports_module).
-		AllowEmpty: true,
+		Name: "R2",
+		Description: "internal/platform/** must not import internal/modules/**, except internal/platform/app " +
+			"(the composition root, exempt per R5)",
+		AllowEmpty: false,
+		MinMatches: 1,
 		Check:      checkR2,
 	},
 	{
 		Name:        "R3",
 		Description: "internal/modules/<a>/** must not import internal/modules/<b>/** except via <b>/contracts",
-		// TODO(Fase 1): same situation as R2 -- internal/modules/** does
-		// not exist yet in the real repository.
-		AllowEmpty: true,
-		Check:      checkR3,
+		AllowEmpty:  false,
+		MinMatches:  1,
+		Check:       checkR3,
 	},
 	{
 		Name:        "R4",
 		Description: "internal/platform/errs and internal/platform/tenant must only import the standard library",
-		// TODO(Bloco B): internal/platform/errs and internal/platform/tenant
-		// do not exist for real yet. AllowEmpty=true covers the production
-		// compliance run; the fixture suite (testdata/fixtures/tenant_impure/r4)
-		// already proves the engine detects the violation.
-		AllowEmpty: true,
+		AllowEmpty: false,
+		MinMatches: 1,
 		Check:      checkR4,
 	},
 	{
@@ -106,11 +98,8 @@ var Rules = []Rule{
 	{
 		Name:        "R6",
 		Description: "only internal/platform/auth/** and _test.go files may reference tenant.Parse",
-		// TODO(Fase 1/Bloco B): internal/platform/auth does not exist for
-		// real yet. AllowEmpty=true covers the production compliance run;
-		// the fixture suite (testdata/fixtures/tenant_impure/r6) already
-		// proves the engine detects the violation.
-		AllowEmpty: true,
+		AllowEmpty: false,
+		MinMatches: 1,
 		Check:      checkR6,
 	},
 }
@@ -294,12 +283,20 @@ func checkR1(pkgs []*packages.Package) ([]Violation, error) {
 // --- R2: platform must not import modules -------------------------------
 
 // checkR2 flags every internal/platform/** package that transitively
-// imports internal/modules/**.
+// imports internal/modules/**, EXCEPT internal/platform/app: the HTTP
+// composition root. Per R5 (internal/modules/README.md and the doc comment
+// on internal/platform/app.NewApp), internal/platform/app plays the same
+// "wire everything together" role cmd/api does, and modules are expected to
+// be plugged into it directly (see T6.2). This is the ONLY carve-out to
+// R2 -- every other internal/platform/** package must stay clean.
 func checkR2(pkgs []*packages.Package) ([]Violation, error) {
 	var violations []Violation
 
 	for _, pkg := range pkgs {
 		if !isUnderPath(pkg.PkgPath, "internal/platform") {
+			continue
+		}
+		if isUnderPath(pkg.PkgPath, "internal/platform/app") {
 			continue
 		}
 

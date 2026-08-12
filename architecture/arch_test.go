@@ -156,6 +156,52 @@ func TestArchitectureRules(t *testing.T) {
 		}
 	})
 
+	// R5 documents that composition-root code is exempt from every rule, and
+	// names both cmd/** AND internal/platform/app explicitly as composition
+	// roots (see internal/modules/README.md and the real
+	// internal/platform/app.NewApp doc comment). These two subtests pin down
+	// R2's narrow carve-out for internal/platform/app specifically: it must
+	// remain the ONLY internal/platform/** package excused from R2, so a
+	// sibling package under internal/platform/** (here, package foo) must
+	// keep tripping R2 exactly as before.
+	t.Run("R2_non_app_platform_package_still_violates", func(t *testing.T) {
+		pkgs := loadFixture(t, "platform_imports_module", modeGraph, false)
+		rule := findRule(t, "R2")
+
+		violations, err := rule.Check(pkgs)
+		if err != nil {
+			t.Fatalf("R2.Check: %v", err)
+		}
+
+		v := mustFindViolation(t, violations, "internal/platform/foo")
+		if !strings.Contains(v.Detail, "internal/modules/bar") {
+			t.Errorf("violation detail = %q, want it to mention internal/modules/bar", v.Detail)
+		}
+	})
+
+	t.Run("R2_platform_app_composition_root_is_exempt", func(t *testing.T) {
+		pkgs := loadFixture(t, "platform_imports_module", modeGraph, false)
+		rule := findRule(t, "R2")
+
+		violations, err := rule.Check(pkgs)
+		if err != nil {
+			t.Fatalf("R2.Check: %v", err)
+		}
+
+		// internal/platform/app imports internal/modules/bar too (see the
+		// fixture's app.go), but unlike foo it must NEVER be flagged: R2's
+		// exception for the composition root exists exactly to keep this
+		// fixture green once internal/platform/app.NewApp (the real
+		// composition root) starts wiring internal/modules/operations in
+		// T6.2.
+		mustNotFindViolation(t, violations, "internal/platform/app")
+
+		// Only foo violates; app must not add a second violation.
+		if len(violations) != 1 {
+			t.Errorf("want exactly 1 violation (foo only, app is exempt), got %d: %+v", len(violations), violations)
+		}
+	})
+
 	t.Run("R3_cross_module_without_contracts", func(t *testing.T) {
 		pkgs := loadFixture(t, "cross_module", modeGraph, false)
 		rule := findRule(t, "R3")
