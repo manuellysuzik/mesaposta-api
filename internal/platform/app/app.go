@@ -27,6 +27,8 @@ import (
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/config"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/db"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/httpx"
+	operationshttp "github.com/manuellysuzik/mesaposta-api/internal/modules/operations/infrastructure/http"
+	operationspg "github.com/manuellysuzik/mesaposta-api/internal/modules/operations/infrastructure/postgres"
 )
 
 const (
@@ -85,6 +87,14 @@ func NewApp(cfg config.Config, pool *db.Pool, logger *slog.Logger, verifier *tok
 		r.Use(auth.Authenticate(verifier))
 		r.With(auth.RequireRole(token.RoleGestor)).Post("/events", createProbeEventHandler(pool))
 		r.With(auth.RequireRole(token.RoleGestor, token.RoleFuncionario)).Get("/events/{aggregateID}", getProbeEventHandler(pool))
+	})
+
+	router.Route("/v1", func(r chi.Router) {
+		r.Use(auth.Authenticate(verifier))
+		if pool != nil {
+			uow := operationspg.NewUnitOfWork(pool)
+			operationshttp.Mount(r, uow)
+		}
 	})
 
 	return router

@@ -9,6 +9,14 @@ import (
 // Mount registers all operations module routes under the given router.
 // The router is expected to already have auth.Authenticate middleware applied.
 func Mount(r chi.Router, uow domain.UnitOfWork) {
-	// Placeholder: routes will be added by each slice (Slice 1-6).
-	// This function is called from internal/platform/app/app.go NewApp.
+	r.Route("/stock-items", func(r chi.Router) {
+		r.Get("/{id}", getStockItemHandler(uow))
+		r.Post("/", createStockItemHandler(uow))
+		r.Post("/{id}/movements", registerStockMovementHandler(uow))
+	})
+	r.Route("/purchase-orders", func(r chi.Router) {
+		r.Get("/{id}", getPurchaseOrderHandler(uow))
+		r.Post("/", createPurchaseOrderHandler(uow))
+		r.Post("/{id}/receive", receivePurchaseOrderHandler(uow))
+	})
 }
