@@ -40,6 +40,33 @@ internal/modules/<name>/
 │   │                   # internal/platform/auth. Depends on application/,
 │   │                   # never directly on domain/ internals it doesn't
 │   │                   # need.
+│   ├── httppublic/     # OPTIONAL. A SECOND, entirely separate HTTP
+│   │                   # adapter for a module that (unlike every module
+│   │                   # up through Fase 2) exposes an UNAUTHENTICATED,
+│   │                   # publicly-reachable surface -- e.g.
+│   │                   # internal/modules/ordering's digital-menu routes,
+│   │                   # addressed by a tenant SLUG in the URL path
+│   │                   # (/public/v1/{tenantSlug}/...) instead of a JWT.
+│   │                   # httppublic/ NEVER shares a DTO with http/: the
+│   │                   # two adapters serve different trust levels (an
+│   │                   # authenticated, role-checked staff member vs.
+│   │                   # literally anyone who scans a QR code), so a field
+│   │                   # added to http/'s response for a legitimate
+│   │                   # management reason (a version number, an internal
+│   │                   # cost, ...) must never be able to silently leak
+│   │                   # into httppublic/'s response just because the two
+│   │                   # packages happened to share a struct. Wiring
+│   │                   # httppublic/'s Mount into the composition root
+│   │                   # ALWAYS goes behind, in this order: (1) an
+│   │                   # internal/platform/httpx.RateLimiter, keyed by
+│   │                   # client IP + tenant slug, so a request for a
+│   │                   # bogus slug never costs a database round trip; (2)
+│   │                   # internal/platform/auth/publictenant.Middleware,
+│   │                   # which resolves the URL's {tenantSlug} into a
+│   │                   # trusted tenant.TenantID exactly as if it had
+│   │                   # arrived on a JWT claim. See
+│   │                   # internal/modules/ordering/infrastructure/httppublic's
+│   │                   # own doc comment for the fully worked example.
 │   └── postgres/       # Postgres adapters: repository IMPLEMENTATIONS
 │                       # (satisfying domain/'s repository interfaces),
 │                       # built on internal/platform/db.Scope, exactly the
@@ -75,8 +102,13 @@ than introduce a second convention.
 A module that has no HTTP surface of its own (e.g. a module only ever
 invoked internally by another module's application layer, through
 `contracts/`) may omit `infrastructure/http/`. A module with no
-Postgres-backed state may omit `infrastructure/postgres/`. Every module
-MUST have `domain/`, `application/`, and `contracts/` even if `contracts/`
+Postgres-backed state may omit `infrastructure/postgres/`. A module also
+gains `infrastructure/httppublic/` — as a THIRD, optional adapter
+directory, alongside `http/` and `postgres/` — the moment it needs an
+UNAUTHENTICATED HTTP surface (see the layout diagram above for the full
+rationale); `internal/modules/ordering` is this codebase's first module to
+need one. Every module MUST have `domain/`, `application/`, and
+`contracts/` even if `contracts/`
 starts out nearly empty — the point is that the seam exists from the
 module's very first commit, not that every subdirectory is always
 populated.
