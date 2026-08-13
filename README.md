@@ -20,10 +20,16 @@ racional dessa decisão.
 
 ## Status atual
 
-Fase 0 — fundação do projeto — está completa (Blocos A-F). Ainda não há
-módulos de domínio/regras de negócio implementados (isso começa na Fase 1,
-com `internal/modules/operations`); o que existe hoje é a fundação que toda
-regra de negócio futura vai se apoiar:
+Todas as fases do plano de arquitetura original estão implementadas: a
+fundação (Fase 0) e os cinco módulos de domínio (`operations`, `catalog`,
+`crm`, `community`, `ordering` — este último com um adapter público sem
+autenticação para o cardápio digital via QR code). **Comece por
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)** para uma visão geral e um
+roteiro de leitura do código; este README cobre só o "como rodar
+localmente".
+
+O que a fundação (Fase 0) entregou, e que toda regra de negócio depois se
+apoia em cima:
 
 - O esqueleto do repositório (tooling, lint, formatação, CI gate local via
   `make check`).
@@ -245,32 +251,44 @@ para o racional completo:
   suítes contra Postgres real, incluindo a fatia end-to-end T19), mais o
   gate de cobertura combinada (unit + integration, ≥ 80%).
 
-## Estrutura do repositório (Fase 0 completa — Blocos A-F)
+## Estrutura do repositório
 
 ```
 .
-├── architecture/            # fitness function de arquitetura (T02)
+├── architecture/            # fitness function de arquitetura
 │   ├── rules.go
 │   ├── arch_test.go
 │   └── testdata/fixtures/   # pacotes fixture, cada um violando 1 regra
-├── cmd/api/                 # composition root / entry point (T18)
+├── cmd/api/                 # composition root / entry point
 │   ├── main.go               # os.Exit(run(...)) — sem lógica própria
 │   └── run.go                 # config -> pool -> migrations opcionais ->
 │                              # app.NewApp -> httpx.NewServer -> shutdown
-├── docs/adr/                 # Architecture Decision Records
+├── docs/
+│   ├── ARCHITECTURE.md       # visão geral + roteiro de leitura p/ a equipe
+│   └── adr/                   # Architecture Decision Records
 ├── internal/
-│   ├── modules/               # módulos de domínio (Fase 1+); hoje só o
-│   │   └── README.md          # template de layout que todo módulo segue
+│   ├── modules/               # módulos de domínio
+│   │   ├── README.md          # template de layout que todo módulo segue
+│   │   ├── operations/        # Fase 1 — estoque, compras
+│   │   ├── catalog/           # Fase 2 — produtos, receitas
+│   │   ├── crm/               # Fase 4 — clientes, fidelidade
+│   │   ├── community/         # Fase 5 — posts, curtidas
+│   │   └── ordering/          # Fase 3 — mesas, pedidos + cardápio público
 │   └── platform/               # infraestrutura compartilhada
-│       ├── app/                 # NewApp: monta o http.Handler completo (T18)
-│       ├── auth/                 # Authenticate/RequireRole + token/refresh/password
+│       ├── app/                 # NewApp: monta o http.Handler completo
+│       ├── auth/                 # Authenticate/RequireRole + token/refresh/
+│       │   │                      # password/publictenant (resolução por slug)
 │       ├── config/                # carregamento/validação de configuração
-│       ├── db/                     # Pool + Scope (RLS) + migrations
+│       ├── db/                     # Pool + Scope (RLS) + migrations +
+│       │                            # registro de tenants (LookupTenantBySlug)
 │       ├── errs/                    # taxonomia de erros
-│       ├── httpx/                    # envelope, roteador, middlewares, E2E (T19)
+│       ├── httpx/                    # envelope, roteador, middlewares,
+│       │                              # rate limiter, E2E
 │       ├── outbox/                    # outbox transacional (+ outbox/postgres)
 │       └── tenant/                     # TenantID + contexto
-├── .github/workflows/ci.yml   # CI: check + integration (T20)
+├── BACKLOG.md                 # melhorias identificadas e deliberadamente
+│                                # adiadas, com justificativa
+├── .github/workflows/ci.yml   # CI: check + integration
 ├── .editorconfig
 ├── .golangci.yml
 ├── .gitignore
