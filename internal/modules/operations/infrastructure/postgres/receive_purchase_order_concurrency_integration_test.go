@@ -65,7 +65,7 @@ func TestReceivePurchaseOrder_ConcurrentReceipts_ExactlyOneWinner(t *testing.T) 
 		go func(i int) {
 			defer wg.Done()
 			<-start
-			results[i] = application.ReceivePurchaseOrder(ctx, uow, order.ID(), time.Now().UTC())
+			results[i] = application.ReceivePurchaseOrder(ctx, uow, order.ID(), time.Now().UTC(), "actor-concurrency-test")
 		}(i)
 	}
 	close(start)

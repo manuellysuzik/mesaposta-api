@@ -62,7 +62,7 @@ var Rules = []Rule{
 		Name: "R1",
 		Description: "packages under **/domain/** must not transitively reach net/http, database/sql, " +
 			"github.com/jackc/**, github.com/go-chi/**, github.com/golang-jwt/**, github.com/pressly/**, " +
-			"github.com/alexedwards/**, nor internal/platform/** outside the {errs, tenant, outbox} allowlist",
+			"github.com/alexedwards/**, nor internal/platform/** outside the {errs, tenant, outbox, audit} allowlist",
 		AllowEmpty: false,
 		MinMatches: 1,
 		Check:      checkR1,
@@ -85,9 +85,9 @@ var Rules = []Rule{
 	{
 		Name:        "R4",
 		Description: "internal/platform/errs and internal/platform/tenant must only import the standard library",
-		AllowEmpty: false,
-		MinMatches: 1,
-		Check:      checkR4,
+		AllowEmpty:  false,
+		MinMatches:  1,
+		Check:       checkR4,
 	},
 	{
 		Name:        "R5",
@@ -98,9 +98,9 @@ var Rules = []Rule{
 	{
 		Name:        "R6",
 		Description: "only internal/platform/auth/** and _test.go files may reference tenant.Parse",
-		AllowEmpty: false,
-		MinMatches: 1,
-		Check:      checkR6,
+		AllowEmpty:  false,
+		MinMatches:  1,
+		Check:       checkR6,
 	},
 }
 
@@ -195,10 +195,26 @@ var forbiddenImportPrefixes = []string{
 
 // domainPlatformAllowlist is the set of internal/platform/** subpackages a
 // domain package is allowed to import.
+//
+// Every entry here is a PURE PORT package: types and interfaces only, with
+// no pgx/chi/net-http/database-sql anywhere in its own build graph. That
+// property is the entire admission criterion -- adding a package that
+// transitively reaches infrastructure would let a domain package import it
+// and silently smuggle the whole forbidden set past this rule. Note that
+// "outbox" and "audit" name only the port packages themselves; their
+// Postgres adapters deliberately live in the separate
+// internal/platform/{outbox,audit}/postgres subpackages, which are NOT on
+// this allowlist (platformSubpackage returns the first segment after
+// "internal/platform/", so "internal/platform/audit/postgres" resolves to
+// "audit" -- see the doc comment on internal/platform/audit/postgres for
+// why the split exists, and note that a domain package importing that
+// subpackage would still be caught by forbiddenImportPrefixes, since it
+// transitively reaches github.com/jackc/**).
 var domainPlatformAllowlist = map[string]bool{
 	"errs":   true,
 	"tenant": true,
 	"outbox": true,
+	"audit":  true,
 }
 
 // matchForbiddenImport reports whether importPath matches one of

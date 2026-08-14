@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/manuellysuzik/mesaposta-api/internal/modules/operations/domain"
+	"github.com/manuellysuzik/mesaposta-api/internal/platform/audit"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/errs"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/outbox"
 )
@@ -126,6 +127,25 @@ func (f *fakeEventPublisher) Publish(ctx context.Context, events ...outbox.Domai
 	return f.publish(ctx, events...)
 }
 
+// fakeAuditRecorder is a func-field test fake for audit.Recorder. Its
+// default (nil record func) accumulates every entry into recorded, so a
+// handler test that does not care about auditing keeps passing untouched
+// while one that does can assert on what was written.
+type fakeAuditRecorder struct {
+	record   func(ctx context.Context, entries ...audit.Entry) error
+	recorded []audit.Entry
+}
+
+var _ audit.Recorder = (*fakeAuditRecorder)(nil)
+
+func (f *fakeAuditRecorder) Record(ctx context.Context, entries ...audit.Entry) error {
+	f.recorded = append(f.recorded, entries...)
+	if f.record == nil {
+		return nil
+	}
+	return f.record(ctx, entries...)
+}
+
 // fakeRepositories is a func-field test fake for domain.Repositories.
 type fakeRepositories struct {
 	stockItems     *fakeStockItemRepository
@@ -133,6 +153,7 @@ type fakeRepositories struct {
 	stockMovements *fakeStockMovementRepository
 	transactions   *fakeTransactionRepository
 	events         *fakeEventPublisher
+	auditEntries   *fakeAuditRecorder
 }
 
 var _ domain.Repositories = (*fakeRepositories)(nil)
@@ -144,6 +165,7 @@ func newFakeRepositories() *fakeRepositories {
 		stockMovements: &fakeStockMovementRepository{},
 		transactions:   &fakeTransactionRepository{},
 		events:         &fakeEventPublisher{},
+		auditEntries:   &fakeAuditRecorder{},
 	}
 }
 
@@ -152,6 +174,7 @@ func (f *fakeRepositories) PurchaseOrders() domain.PurchaseOrderRepository { ret
 func (f *fakeRepositories) StockMovements() domain.StockMovementRepository { return f.stockMovements }
 func (f *fakeRepositories) Transactions() domain.TransactionRepository     { return f.transactions }
 func (f *fakeRepositories) Events() outbox.DomainEventPublisher            { return f.events }
+func (f *fakeRepositories) Audit() audit.Recorder                          { return f.auditEntries }
 
 // fakeUnitOfWork is a test fake for domain.UnitOfWork.
 type fakeUnitOfWork struct {

@@ -11,6 +11,12 @@ import (
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/errs"
 )
 
+// testActorID is the audit "who" every test in this file passes to
+// ReceivePurchaseOrder, standing in for the JWT "sub" claim the HTTP layer
+// supplies in production (see
+// internal/modules/operations/infrastructure/http.actorIDFrom).
+const testActorID = "user-42"
+
 // receiveFixture bundles everything a ReceivePurchaseOrder test needs: one
 // pending PurchaseOrder referencing two StockItems, and the fakeUnitOfWork
 // it (and only it) is seeded into.
@@ -82,7 +88,7 @@ func TestReceivePurchaseOrder_HappyPath_PersistsEverythingAtomically(t *testing.
 	now := time.Now().UTC()
 
 	// Act
-	err := application.ReceivePurchaseOrder(context.Background(), f.uow, f.order.ID(), now)
+	err := application.ReceivePurchaseOrder(context.Background(), f.uow, f.order.ID(), now, testActorID)
 
 	// Assert
 	if err != nil {
@@ -137,7 +143,7 @@ func TestReceivePurchaseOrder_ConflictOnOrderUpdate_PersistsNothing(t *testing.T
 		"purchase order was concurrently modified", nil)
 
 	// Act
-	err := application.ReceivePurchaseOrder(context.Background(), f.uow, f.order.ID(), now)
+	err := application.ReceivePurchaseOrder(context.Background(), f.uow, f.order.ID(), now, testActorID)
 
 	// Assert
 	if err == nil {
@@ -164,6 +170,140 @@ func TestReceivePurchaseOrder_ConflictOnOrderUpdate_PersistsNothing(t *testing.T
 	if len(snapshot.events) != 0 {
 		t.Errorf("events = %v, want empty", snapshot.events)
 	}
+	// The audit trail rolls back with everything else: an entry claiming a
+	// receipt that never committed would be a record of something that did
+	// not happen.
+	if len(snapshot.auditEntries) != 0 {
+		t.Errorf("auditEntries = %v, want empty", snapshot.auditEntries)
+	}
+}
+
+// TestReceivePurchaseOrder_RecordsExactlyOneAuditEntry is the audit trail's
+// own acceptance test: a successful receipt writes exactly one entry, with
+// the actor the caller supplied, the stable action/entity identifiers, and
+// before/after snapshots that actually differ -- a "before" accidentally
+// read after the domain mutation would show the post-receipt state twice,
+// which is the specific bug this test exists to catch.
+func TestReceivePurchaseOrder_RecordsExactlyOneAuditEntry(t *testing.T) {
+	// Arrange
+	f := newReceiveFixture(t)
+	now := time.Now().UTC()
+	versionBefore := f.order.Version()
+
+	// Act
+	if err := application.ReceivePurchaseOrder(context.Background(), f.uow, f.order.ID(), now, testActorID); err != nil {
+		t.Fatalf("ReceivePurchaseOrder: unexpected error: %v", err)
+	}
+
+	// Assert
+	snapshot := f.uow.snapshot()
+	if len(snapshot.auditEntries) != 1 {
+		t.Fatalf("len(auditEntries) = %d, want exactly 1: %+v", len(snapshot.auditEntries), snapshot.auditEntries)
+	}
+	entry := snapshot.auditEntries[0]
+
+	if entry.TenantID != f.order.TenantID() {
+		t.Errorf("entry.TenantID = %v, want %v", entry.TenantID, f.order.TenantID())
+	}
+	if entry.ActorID != testActorID {
+		t.Errorf("entry.ActorID = %q, want %q", entry.ActorID, testActorID)
+	}
+	if entry.Action != "purchase_order.received" {
+		t.Errorf("entry.Action = %q, want %q", entry.Action, "purchase_order.received")
+	}
+	if entry.EntityType != "purchase_order" {
+		t.Errorf("entry.EntityType = %q, want %q", entry.EntityType, "purchase_order")
+	}
+	if entry.EntityID != f.order.ID().String() {
+		t.Errorf("entry.EntityID = %q, want %q", entry.EntityID, f.order.ID().String())
+	}
+	if !entry.OccurredAt.Equal(now) {
+		t.Errorf("entry.OccurredAt = %v, want %v", entry.OccurredAt, now)
+	}
+
+	before, ok := entry.Before.(map[string]any)
+	if !ok {
+		t.Fatalf("entry.Before = %T, want map[string]any", entry.Before)
+	}
+	if before["status"] != string(domain.PurchaseOrderStatusPendente) {
+		t.Errorf("entry.Before[status] = %v, want %q", before["status"], domain.PurchaseOrderStatusPendente)
+	}
+	if before["version"] != versionBefore {
+		t.Errorf("entry.Before[version] = %v, want %d", before["version"], versionBefore)
+	}
+
+	after, ok := entry.After.(map[string]any)
+	if !ok {
+		t.Fatalf("entry.After = %T, want map[string]any", entry.After)
+	}
+	if after["status"] != string(domain.PurchaseOrderStatusRecebido) {
+		t.Errorf("entry.After[status] = %v, want %q", after["status"], domain.PurchaseOrderStatusRecebido)
+	}
+	if after["version"] != versionBefore+1 {
+		t.Errorf("entry.After[version] = %v, want %d", after["version"], versionBefore+1)
+	}
+}
+
+// TestReceivePurchaseOrder_EmptyActor_IsRecordedAsIs pins down the
+// best-effort actor decision: an unidentifiable actor must never block the
+// business operation, and must never be papered over with a placeholder --
+// the empty string flows straight through, and the Postgres adapter turns
+// it into SQL NULL.
+func TestReceivePurchaseOrder_EmptyActor_IsRecordedAsIs(t *testing.T) {
+	// Arrange
+	f := newReceiveFixture(t)
+	now := time.Now().UTC()
+
+	// Act
+	if err := application.ReceivePurchaseOrder(context.Background(), f.uow, f.order.ID(), now, ""); err != nil {
+		t.Fatalf("ReceivePurchaseOrder with no actor: unexpected error: %v", err)
+	}
+
+	// Assert
+	snapshot := f.uow.snapshot()
+	if len(snapshot.auditEntries) != 1 {
+		t.Fatalf("len(auditEntries) = %d, want exactly 1", len(snapshot.auditEntries))
+	}
+	if got := snapshot.auditEntries[0].ActorID; got != "" {
+		t.Errorf("entry.ActorID = %q, want %q (no placeholder substitution)", got, "")
+	}
+}
+
+// TestReceivePurchaseOrder_AuditFailure_RollsBackTheWholeUnitOfWork is the
+// other half of the atomicity guarantee: the trail cannot be silently
+// skipped either. If the audit write fails, the receipt it was supposed to
+// describe must not commit, leaving no unrecorded mutation behind.
+func TestReceivePurchaseOrder_AuditFailure_RollsBackTheWholeUnitOfWork(t *testing.T) {
+	// Arrange
+	f := newReceiveFixture(t)
+	now := time.Now().UTC()
+	f.uow.errors.auditRecord = errs.New(errs.Internal, "audit_record_failed",
+		"simulated audit write failure", errors.New("connection reset"))
+
+	// Act
+	err := application.ReceivePurchaseOrder(context.Background(), f.uow, f.order.ID(), now, testActorID)
+
+	// Assert
+	if err == nil {
+		t.Fatal("ReceivePurchaseOrder: expected an error when the audit write fails, got nil")
+	}
+	if !errs.IsKind(err, errs.Internal) {
+		t.Errorf("errs.KindOf(err) = %v, want %v", errs.KindOf(err), errs.Internal)
+	}
+
+	snapshot := f.uow.snapshot()
+	if snapshot.purchaseOrders[f.order.ID()].Status() != domain.PurchaseOrderStatusPendente {
+		t.Error("purchase order was persisted despite the audit write failing")
+	}
+	if len(snapshot.stockMovements) != 0 {
+		t.Errorf("stockMovements = %v, want empty", snapshot.stockMovements)
+	}
+	if len(snapshot.transactions) != 0 {
+		t.Errorf("transactions = %v, want empty", snapshot.transactions)
+	}
+	if len(snapshot.auditEntries) != 0 {
+		t.Errorf("auditEntries = %v, want empty", snapshot.auditEntries)
+	}
 }
 
 func TestReceivePurchaseOrder_PersistsPurchaseOrderBeforeAnyOtherWrite(t *testing.T) {
@@ -172,7 +312,7 @@ func TestReceivePurchaseOrder_PersistsPurchaseOrderBeforeAnyOtherWrite(t *testin
 	now := time.Now().UTC()
 
 	// Act
-	if err := application.ReceivePurchaseOrder(context.Background(), f.uow, f.order.ID(), now); err != nil {
+	if err := application.ReceivePurchaseOrder(context.Background(), f.uow, f.order.ID(), now, testActorID); err != nil {
 		t.Fatalf("ReceivePurchaseOrder: unexpected error: %v", err)
 	}
 
@@ -199,7 +339,7 @@ func TestReceivePurchaseOrder_RepositoryErrorKindPropagatesThroughDo(t *testing.
 		"simulated infrastructure failure", errors.New("connection reset"))
 
 	// Act
-	err := application.ReceivePurchaseOrder(context.Background(), f.uow, f.order.ID(), now)
+	err := application.ReceivePurchaseOrder(context.Background(), f.uow, f.order.ID(), now, testActorID)
 
 	// Assert
 	if err == nil {
@@ -233,7 +373,7 @@ func TestReceivePurchaseOrder_AlreadyReceivedOrder_PersistsNothing(t *testing.T)
 	f.uow.state.purchaseOrders[f.order.ID()] = &preReceived
 
 	// Act
-	err := application.ReceivePurchaseOrder(context.Background(), f.uow, f.order.ID(), now.Add(time.Hour))
+	err := application.ReceivePurchaseOrder(context.Background(), f.uow, f.order.ID(), now.Add(time.Hour), testActorID)
 
 	// Assert
 	if err == nil {

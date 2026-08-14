@@ -5,6 +5,18 @@ import (
 	"time"
 
 	"github.com/manuellysuzik/mesaposta-api/internal/modules/operations/domain"
+	"github.com/manuellysuzik/mesaposta-api/internal/platform/audit"
+)
+
+// Audit action/entity identifiers this use case records. They are
+// constants rather than inline literals because the value of an audit
+// trail depends entirely on the identifiers being STABLE: a query written
+// today against "purchase_order.received" must keep finding the same
+// events years from now, and a typo in a literal would silently split one
+// action into two un-joinable halves.
+const (
+	auditActionPurchaseOrderReceived = "purchase_order.received"
+	auditEntityPurchaseOrder         = "purchase_order"
 )
 
 // ReceivePurchaseOrder is the application-layer use case that receives a
@@ -35,13 +47,28 @@ import (
 // lives inside this single, rolled-back Do call, and is never reused
 // across calls, that in-memory mutation never escapes to a persisted
 // state or to a subsequent call.
-func ReceivePurchaseOrder(ctx context.Context, uow domain.UnitOfWork, orderID domain.ID, now time.Time) error {
+//
+// actorID identifies who requested the receipt, for the audit trail. It is
+// best-effort by design: the HTTP layer fills it from the authenticated
+// access token's "sub" claim (see internal/platform/auth.ClaimsFromContext)
+// and passes the empty string when there is no identifiable human actor --
+// a scheduled job, an internal replay. An empty actorID is recorded as SQL
+// NULL, never as a placeholder, so "the system did this" stays distinct
+// from any real actor id. See docs/adr/0006-audit-log.md for why this stays
+// a plain string until an identity module exists.
+func ReceivePurchaseOrder(ctx context.Context, uow domain.UnitOfWork, orderID domain.ID, now time.Time, actorID string) error {
 	return uow.Do(ctx, func(ctx context.Context, r domain.Repositories) error {
 		order, err := r.PurchaseOrders().FindByIDForUpdate(ctx, orderID)
 		if err != nil {
 			return err
 		}
+		// Snapshot BEFORE domain.ReceivePurchaseOrder mutates order in
+		// place: after that call, order.Status()/Version() already report
+		// the post-receipt state, so reading them later would record a
+		// "before" identical to the "after" -- an audit entry that shows
+		// no change at all.
 		orderVersionBeforeReceive := order.Version()
+		orderStatusBeforeReceive := order.Status()
 
 		stockItemIDs := purchaseOrderStockItemIDs(order)
 		stockItems, err := r.StockItems().FindManyByIDs(ctx, stockItemIDs)
@@ -77,6 +104,44 @@ func ReceivePurchaseOrder(ctx context.Context, uow domain.UnitOfWork, orderID do
 		}
 
 		if err := r.Events().Publish(ctx, result.Events...); err != nil {
+			return err
+		}
+
+		// The audit entry goes last, after every other write, on the same
+		// principle the outbox publish above follows: it is one more
+		// effect to persist atomically, and ordering it last keeps the
+		// early-conflict-detection property the PurchaseOrder's own
+		// UpdateWithVersion-first ordering exists for. Because it runs
+		// inside the same Do (and therefore the same transaction), a
+		// failure anywhere -- including here -- rolls back the mutation
+		// AND its trail together: there is no state in which the order was
+		// received but nothing recorded it, nor one in which the trail
+		// claims a receipt that never committed.
+		entry, err := audit.NewEntry(
+			result.Order.TenantID(),
+			actorID,
+			auditActionPurchaseOrderReceived,
+			auditEntityPurchaseOrder,
+			result.Order.ID().String(),
+			now,
+			// Small, targeted snapshots -- not full aggregate dumps. The
+			// trail must stay cheap enough to always write, and must not
+			// become a second, drifting copy of the aggregate; what an
+			// investigator actually needs here is the state transition and
+			// the version it happened at.
+			map[string]any{
+				"status":  string(orderStatusBeforeReceive),
+				"version": orderVersionBeforeReceive,
+			},
+			map[string]any{
+				"status":  string(result.Order.Status()),
+				"version": result.Order.Version(),
+			},
+		)
+		if err != nil {
+			return err
+		}
+		if err := r.Audit().Record(ctx, entry); err != nil {
 			return err
 		}
 

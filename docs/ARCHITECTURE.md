@@ -42,7 +42,7 @@ commitadas:
 
 O que **não** está implementado ainda (deliberadamente, ver §8): identidade
 (`identity`/usuários como módulo próprio — hoje só existe autenticação, não
-CRUD de usuário), idempotency keys, audit log, rate limiting fora da rota
+CRUD de usuário), idempotency keys, rate limiting fora da rota
 pública de `ordering`, retenção/expurgo de PII, OpenAPI gerado. Tudo isso
 está catalogado com justificativa em [`BACKLOG.md`](../BACKLOG.md).
 
@@ -172,7 +172,7 @@ Resumo de uma linha cada, pra referência rápida:
 
 - **R1** — `domain/` de nenhum módulo pode importar `net/http`,
   `database/sql`, pgx, chi, JWT, goose, argon2id, nem `internal/platform/**`
-  fora de `{errs, tenant, outbox}`.
+  fora de `{errs, tenant, outbox, audit}`.
 - **R2** — `internal/platform/**` nunca importa `internal/modules/**`,
   exceto `internal/platform/app` (composition root).
 - **R3** — módulo A só importa módulo B via `B/contracts`, nunca

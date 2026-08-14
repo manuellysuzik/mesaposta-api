@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/manuellysuzik/mesaposta-api/internal/modules/operations/domain"
+	"github.com/manuellysuzik/mesaposta-api/internal/platform/audit"
+	auditpg "github.com/manuellysuzik/mesaposta-api/internal/platform/audit/postgres"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/db"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/outbox"
 	outboxpg "github.com/manuellysuzik/mesaposta-api/internal/platform/outbox/postgres"
@@ -64,9 +66,10 @@ func (u *UnitOfWork) Do(ctx context.Context, fn func(ctx context.Context, r doma
 }
 
 // repositories is the domain.Repositories implementation Do hands to fn,
-// bundling every repository (plus the domain event publisher) scoped to
-// the exact same db.Scope -- and therefore the exact same Postgres
-// transaction -- for the duration of a single Do call.
+// bundling every repository (plus the domain event publisher and the
+// audit-trail recorder) scoped to the exact same db.Scope -- and therefore
+// the exact same Postgres transaction -- for the duration of a single Do
+// call.
 type repositories struct {
 	scope *db.Scope
 }
@@ -121,4 +124,39 @@ var _ outbox.DomainEventPublisher = eventPublisher{}
 
 func (p eventPublisher) Publish(ctx context.Context, events ...outbox.DomainEvent) error {
 	return outboxpg.WithScope(ctx, p.scope, events...)
+}
+
+func (r *repositories) Audit() audit.Recorder {
+	return auditRecorder{scope: r.scope}
+}
+
+// auditRecorder adapts auditpg.WithScope (a free function operating on an
+// already-open *db.Scope) to the audit.Recorder interface, scoped to the
+// SAME transaction every other repository handed out by this Do call uses.
+// This is deliberately the exact shape eventPublisher above has, for the
+// exact same reason: the audit entry describing a mutation must commit
+// with that mutation or not at all. Deliberately NOT used here:
+// auditpg.Recorder (the pool-backed adapter), which opens a transaction of
+// its own -- reaching for it inside a use case would silently reintroduce
+// the two-transaction split this whole seam exists to prevent.
+//
+// Every entry's TenantID is checked by auditpg.WithScope against
+// scope.TenantID() (the tenant Do's own db.Pool.Scope call derived from
+// ctx): an entry whose TenantID does not match -- e.g. a caller bug that
+// built it from the wrong tenant -- is rejected outright rather than
+// silently recorded under a tenant it does not belong to. Every entry
+// application/'s use cases construct is built from an aggregate's own
+// TenantID(), which always traces back to the same authenticated tenant
+// ctx carries into Do, so this check is never expected to fire in
+// practice -- but a falsified audit record is exactly the failure this
+// kind of defense in depth exists to turn into a loud, immediate error.
+type auditRecorder struct {
+	scope *db.Scope
+}
+
+// compile-time check: auditRecorder must satisfy audit.Recorder.
+var _ audit.Recorder = auditRecorder{}
+
+func (r auditRecorder) Record(ctx context.Context, entries ...audit.Entry) error {
+	return auditpg.WithScope(ctx, r.scope, entries...)
 }

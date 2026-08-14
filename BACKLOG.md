@@ -117,11 +117,12 @@ These are **not bugs**, but enhancements identified during implementation. **Not
 **Defer to**: Fase 4 (post-delivery) or as dedicated task once HTTP stable.  
 **Impl**: Add CLI build step to generate `openapi/generated.json` + validate against tests.
 
-### 7. Audit log table & queries (Fase 0 Gap #7 in master plan)
-**Issue**: No trail of who did what when for DELETE/apply-discount/receive-PO operations.  
-**Impact**: Medium — required for compliance/debugging in production.  
-**Solution**: `audit_log` table (tenant_id, actor_id, action, entity, before/after JSON) written in same txn as mutations.  
-**Defer to**: Fase 6 (original plan) or post-launch if audit requirement emerges.
+### 7. Audit log table & queries (Fase 0 Gap #7 in master plan) — ✅ implemented for `operations`, deferred elsewhere
+**Issue**: No trail of who did what when for DELETE/apply-discount/receive-PO operations.
+**Status (2026-08-13)**: `internal/platform/audit` (port, mirroring `outbox`) + `internal/platform/audit/postgres` (adapter) + `audit_log` table (migration `0010_audit_log.sql`, RLS `tenant_isolation`, append-only) shipped and wired into `operations.ReceivePurchaseOrder` as the reference flow. See [`docs/adr/0006-audit-log.md`](docs/adr/0006-audit-log.md) for the full design and the deliberate scope cut.
+**Remaining**: `catalog.ApplyDiscount`, `crm` loyalty adjustments, `community` moderation (delete post/comment), and `ordering`'s order lifecycle are NOT wired yet — same mechanical pattern (`Repositories.Audit()` + `UnitOfWork` wiring + call site + fakes), one module at a time.
+**Impact**: Medium — required for compliance/debugging in production; now closed for the highest-value flow (stock receipt), open for the rest.
+**Defer to**: One module per follow-up PR, using `operations` as the reference implementation.
 
 ### 8. Better isolation level docs (long-term)
 **Issue**: ADR 0005 documents Read Committed + locks decision. If Postgres logs `40001` retries routinely, might warrant revisiting.  

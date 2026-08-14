@@ -220,7 +220,7 @@ repository's own established split:
       is nearly empty); `infrastructure/{http,postgres}/` exist if/when the
       module needs them.
 - [ ] `domain/` imports nothing beyond the standard library plus
-      `internal/platform/{errs,tenant,outbox}` (R1).
+      `internal/platform/{errs,tenant,outbox,audit}` (R1).
 - [ ] Nothing in the module imports another module's `domain/`,
       `application/`, or `infrastructure/**` directly — only
       `<other-module>/contracts` (R3).

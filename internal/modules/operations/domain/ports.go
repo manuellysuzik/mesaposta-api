@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 
+	"github.com/manuellysuzik/mesaposta-api/internal/platform/audit"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/outbox"
 )
 
@@ -33,16 +34,26 @@ type UnitOfWork interface {
 	Do(ctx context.Context, fn func(ctx context.Context, r Repositories) error) error
 }
 
-// Repositories bundles every repository (and the domain event publisher)
-// the operations module's use cases need, all scoped to a single
-// UnitOfWork.Do call so that reads and writes performed through them share
-// the same underlying transaction.
+// Repositories bundles every repository (plus the domain event publisher
+// and the audit-trail recorder) the operations module's use cases need,
+// all scoped to a single UnitOfWork.Do call so that reads and writes
+// performed through them share the same underlying transaction.
 type Repositories interface {
 	StockItems() StockItemRepository
 	PurchaseOrders() PurchaseOrderRepository
 	StockMovements() StockMovementRepository
 	Transactions() TransactionRepository
 	Events() outbox.DomainEventPublisher
+	// Audit returns the audit.Recorder bound to this unit of work, for the
+	// same reason Events does: an audit entry is a side effect that must
+	// commit atomically WITH the mutation it describes. An entry written
+	// through a separate transaction could survive a rolled-back mutation
+	// (recording something that never happened) or be lost while the
+	// mutation committed (leaving a gap) -- either way the trail becomes a
+	// source of false statements, which is worse than having no trail.
+	// Routing it through Repositories, exactly like every other write, is
+	// what makes that impossible by construction.
+	Audit() audit.Recorder
 }
 
 // StockItemRepository is the persistence port for the StockItem aggregate.
