@@ -40,11 +40,25 @@ commitadas:
 | — | shared kernel p/ ordering | Registro de tenants, resolução por slug, rate limiter, contrato de preço cross-module | `aa6cfa1` |
 | 3 | `ordering` | Mesas, pedidos (gestão) + cardápio digital público via QR code | `3cf2550` |
 
+**Observabilidade**: tracing (OTel/OTLP → Jaeger) e métricas (Prometheus,
+incluindo p50/p95/p99 de latência HTTP por rota e saturação do pool de
+conexões Postgres) cobrem o processo inteiro automaticamente, na
+composition root (`internal/platform/observability`,
+`internal/platform/httpx`) — nenhum módulo precisa de wiring próprio. Ver
+[ADR-0007](adr/0007-tracing-metrics-rollout.md) e o dashboard Grafana
+provisionado em [`deploy/grafana/`](../deploy/grafana). **Audit trail**
+(quem fez o quê, quando, mudando o quê) é, ao contrário, opt-in por módulo
+— hoje cobre `operations.ReceivePurchaseOrder`, `catalog.ApplyDiscount`,
+`crm`'s ajustes de fidelidade e `ordering`'s transições de status de
+pedido; ver [ADR-0006](adr/0006-audit-log.md) e `BACKLOG.md` item 7 para o
+que falta e por quê.
+
 O que **não** está implementado ainda (deliberadamente, ver §8): identidade
 (`identity`/usuários como módulo próprio — hoje só existe autenticação, não
 CRUD de usuário), idempotency keys, rate limiting fora da rota
-pública de `ordering`, retenção/expurgo de PII, OpenAPI gerado. Tudo isso
-está catalogado com justificativa em [`BACKLOG.md`](../BACKLOG.md).
+pública de `ordering`, retenção/expurgo de PII, OpenAPI gerado, moderação
+(delete post/comentário) em `community`. Tudo isso está catalogado com
+justificativa em [`BACKLOG.md`](../BACKLOG.md).
 
 ## 3. Por onde começar a ler o código
 
@@ -70,7 +84,9 @@ Nesta ordem:
    fitness function é um teste Go, não uma ferramenta externa), `0003`
    (composition root e a fatia E2E de prova), `0004` (pipeline de CI e gate
    de cobertura), `0005` (rationale de isolamento transacional do
-   `operations`).
+   `operations`), `0006` (audit log — port compartilhado + rollout
+   faseado), `0007` (correlação trace/log, p99 por rota de verdade,
+   gauges do pool de conexões).
 6. [`README.md`](../README.md) (raiz) — como rodar localmente, `make
    check`, testes de integração, variáveis de ambiente.
 
