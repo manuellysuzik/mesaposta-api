@@ -6,10 +6,23 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/errs"
 )
+
+// fakeQueryTracer is a minimal pgx.QueryTracer used only to prove
+// WithQueryTracer wires its argument into pgxpool.Config.ConnConfig.Tracer
+// -- its TraceQueryStart/End bodies are never exercised by these
+// (offline, no real connection) tests.
+type fakeQueryTracer struct{}
+
+func (fakeQueryTracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, _ pgx.TraceQueryStartData) context.Context {
+	return ctx
+}
+
+func (fakeQueryTracer) TraceQueryEnd(context.Context, *pgx.Conn, pgx.TraceQueryEndData) {}
 
 // TestOpen_InvalidDSN_ReturnsSanitizedError covers Open's DSN-parsing
 // failure path without needing a real database: pgxpool.ParseConfig fails
@@ -153,5 +166,33 @@ func TestOptions_MinConnsZeroIsRespected(t *testing.T) {
 
 	if cfg.MinConns != 0 {
 		t.Errorf("MinConns = %d, want 0 (an explicit zero override must be respected)", cfg.MinConns)
+	}
+}
+
+func TestWithQueryTracer_SetsConnConfigTracer(t *testing.T) {
+	cfg, err := pgxpool.ParseConfig("postgres://user:pass@127.0.0.1:1/db")
+	if err != nil {
+		t.Fatalf("pgxpool.ParseConfig: %v", err)
+	}
+
+	tracer := fakeQueryTracer{}
+	WithQueryTracer(tracer)(cfg)
+
+	if cfg.ConnConfig.Tracer != tracer {
+		t.Errorf("ConnConfig.Tracer = %#v, want %#v", cfg.ConnConfig.Tracer, tracer)
+	}
+}
+
+func TestWithQueryTracer_NilTracerIsIgnored(t *testing.T) {
+	cfg, err := pgxpool.ParseConfig("postgres://user:pass@127.0.0.1:1/db")
+	if err != nil {
+		t.Fatalf("pgxpool.ParseConfig: %v", err)
+	}
+	original := cfg.ConnConfig.Tracer
+
+	WithQueryTracer(nil)(cfg)
+
+	if cfg.ConnConfig.Tracer != original {
+		t.Errorf("ConnConfig.Tracer changed for a nil tracer, want unchanged %#v", original)
 	}
 }

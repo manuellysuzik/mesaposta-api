@@ -14,11 +14,20 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/exaring/otelpgx"
+
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/app"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/config"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/db"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/httpx"
+	"github.com/manuellysuzik/mesaposta-api/internal/platform/observability"
 )
+
+// observabilityShutdownTimeout bounds how long run waits for the
+// TracerProvider/MeterProvider to flush pending spans/metrics and close
+// their OTLP connection during shutdown, mirroring defaultShutdownTimeout's
+// role for the HTTP server itself below.
+const observabilityShutdownTimeout = 5 * time.Second
 
 // defaultShutdownTimeout bounds how long serve waits for in-flight
 // requests to finish once a shutdown signal (SIGINT/SIGTERM) arrives,
@@ -78,12 +87,36 @@ func run(ctx context.Context, getenv func(string) string, stderr, stdout io.Writ
 	signalCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// obsHandle.Shutdown is deferred here, BEFORE pool.Close below, so it
+	// runs LAST (defers unwind LIFO): the TracerProvider/MeterProvider stay
+	// alive through the pool's own teardown, then get their own bounded
+	// window to flush whatever spans/metrics that teardown produced. When
+	// observability is disabled (cfg.OTELExporterOTLPEndpoint == ""),
+	// obsHandle.Shutdown is a no-op -- see observability.Setup's doc
+	// comment.
+	obsHandle, err := observability.Setup(signalCtx, observability.Config{
+		ServiceName:  cfg.OTELServiceName,
+		OTLPEndpoint: cfg.OTELExporterOTLPEndpoint,
+	})
+	if err != nil {
+		fmt.Fprintln(stderr, "mesaposta-api: setting up observability:", err)
+		return 1
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), observabilityShutdownTimeout)
+		defer cancel()
+		if err := obsHandle.Shutdown(shutdownCtx); err != nil {
+			logger.Error("observability shutdown did not complete cleanly", "err", err)
+		}
+	}()
+
 	pool, err := db.Open(signalCtx, cfg.DatabaseURL,
 		db.WithMaxConns(cfg.DBMaxConns),
 		db.WithMinConns(cfg.DBMinConns),
 		db.WithMaxConnLifetime(cfg.DBMaxConnLifetime),
 		db.WithMaxConnIdleTime(cfg.DBMaxConnIdleTime),
 		db.WithConnectTimeout(cfg.DBConnectTimeout),
+		db.WithQueryTracer(otelpgx.NewTracer()),
 	)
 	if err != nil {
 		fmt.Fprintln(stderr, "mesaposta-api: opening database pool:", err)
@@ -109,7 +142,7 @@ func run(ctx context.Context, getenv func(string) string, stderr, stdout io.Writ
 		return 1
 	}
 
-	handler := app.NewApp(*cfg, pool, logger, verifier)
+	handler := app.NewApp(*cfg, pool, logger, verifier, obsHandle.MetricsHandler)
 	srv := httpx.NewServer(httpx.ServerConfig{
 		Addr:    ":" + cfg.Port,
 		Handler: handler,

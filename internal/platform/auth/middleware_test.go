@@ -293,7 +293,7 @@ func TestAuthenticate_NeverLogsRawToken(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
 	alwaysReady := func(ctx context.Context) error { return nil }
 
-	router := httpx.NewRouter(logger, alwaysReady, time.Second)
+	router := httpx.NewRouter(logger, alwaysReady, time.Second, nil)
 	router.With(auth.Authenticate(verifier)).Get("/protected", func(w http.ResponseWriter, r *http.Request) {
 		httpx.RespondData(w, r, http.StatusOK, map[string]string{"ok": "yes"}, nil)
 	})

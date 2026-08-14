@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/errs"
@@ -73,6 +74,26 @@ func WithConnectTimeout(d time.Duration) Option {
 	return func(cfg *pgxpool.Config) {
 		if d > 0 && cfg.ConnConfig != nil {
 			cfg.ConnConfig.ConnectTimeout = d
+		}
+	}
+}
+
+// WithQueryTracer plugs tracer into every connection this pool opens
+// (pgx.ConnConfig.Tracer), so query execution shows up wherever tracer
+// reports it -- e.g. as OpenTelemetry spans, if the caller passes
+// otelpgx.NewTracer() (see github.com/exaring/otelpgx). This package
+// deliberately does not import otelpgx or anything else OTel-shaped itself
+// (see the package doc comment): composing db.Open with a concrete
+// pgx.QueryTracer implementation is left to a caller that already has
+// broader observability wiring in scope, such as cmd/api/run.go.
+//
+// A nil tracer is a no-op, so callers can pass this option unconditionally
+// even when no tracer was actually configured (e.g. a caller wiring an
+// optional observability provider that resolves to nil when disabled).
+func WithQueryTracer(tracer pgx.QueryTracer) Option {
+	return func(cfg *pgxpool.Config) {
+		if tracer != nil && cfg.ConnConfig != nil {
+			cfg.ConnConfig.Tracer = tracer
 		}
 	}
 }

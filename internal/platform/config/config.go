@@ -41,6 +41,13 @@ const (
 	defaultDBMaxConnLifetime = "1h"
 	defaultDBMaxConnIdleTime = "30m"
 	defaultDBConnectTimeout  = "5s"
+	defaultOTELServiceName   = "mesaposta-api"
+	// defaultOTELExporterOTLPEndpoint is deliberately empty: see
+	// internal/platform/observability's package doc comment for why an
+	// empty endpoint -- meaning observability is OFF by default -- is the
+	// only safe default (in particular so `go test ./...` never depends on
+	// a collector being reachable).
+	defaultOTELExporterOTLPEndpoint = ""
 )
 
 // Config is mesaposta-api's fully validated runtime configuration.
@@ -75,6 +82,17 @@ type Config struct {
 	// DBConnectTimeout bounds how long establishing a new Postgres
 	// connection may take. Defaults to 5s.
 	DBConnectTimeout time.Duration
+
+	// OTELServiceName identifies this process in exported traces/metrics
+	// (see internal/platform/observability.Config.ServiceName). Defaults
+	// to "mesaposta-api".
+	OTELServiceName string
+	// OTELExporterOTLPEndpoint is the OTLP/HTTP collector this process
+	// exports traces to (e.g. "http://jaeger:4318"). Defaults to "" --
+	// empty means observability is disabled entirely, see
+	// internal/platform/observability's package doc comment for why that
+	// is the only safe default.
+	OTELExporterOTLPEndpoint string
 }
 
 // redacted is what Config.String prints in place of any secret value.
@@ -87,9 +105,11 @@ const redacted = "***REDACTED***"
 func (c Config) String() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Config{AppEnv:%s Port:%s DatabaseURL:%s JWTSecret:%s "+
-		"DBMaxConns:%d DBMinConns:%d DBMaxConnLifetime:%s DBMaxConnIdleTime:%s DBConnectTimeout:%s}",
+		"DBMaxConns:%d DBMinConns:%d DBMaxConnLifetime:%s DBMaxConnIdleTime:%s DBConnectTimeout:%s "+
+		"OTELServiceName:%s OTELExporterOTLPEndpoint:%s}",
 		c.AppEnv, c.Port, redacted, redacted,
-		c.DBMaxConns, c.DBMinConns, c.DBMaxConnLifetime, c.DBMaxConnIdleTime, c.DBConnectTimeout)
+		c.DBMaxConns, c.DBMinConns, c.DBMaxConnLifetime, c.DBMaxConnIdleTime, c.DBConnectTimeout,
+		c.OTELServiceName, c.OTELExporterOTLPEndpoint)
 	return b.String()
 }
 
@@ -182,6 +202,9 @@ func LoadFrom(getenv getenvFunc) (*Config, error) {
 		DBMaxConnLifetime: durationWithDefault(getenv, v, "DB_MAX_CONN_LIFETIME", defaultDBMaxConnLifetime),
 		DBMaxConnIdleTime: durationWithDefault(getenv, v, "DB_MAX_CONN_IDLE_TIME", defaultDBMaxConnIdleTime),
 		DBConnectTimeout:  durationWithDefault(getenv, v, "DB_CONNECT_TIMEOUT", defaultDBConnectTimeout),
+
+		OTELServiceName:          stringWithDefault(getenv, "OTEL_SERVICE_NAME", defaultOTELServiceName),
+		OTELExporterOTLPEndpoint: stringWithDefault(getenv, "OTEL_EXPORTER_OTLP_ENDPOINT", defaultOTELExporterOTLPEndpoint),
 	}
 
 	if cfg.JWTSecret != "" && len(cfg.JWTSecret) < minJWTSecretBytes {

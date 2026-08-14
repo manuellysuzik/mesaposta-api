@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // DefaultRequestTimeout is used by NewRouter whenever the caller-supplied
@@ -17,13 +18,30 @@ const DefaultRequestTimeout = 30 * time.Second
 // NewRouter builds the chi.Router every mesaposta-api HTTP entry point
 // shares: the fixed middleware chain
 //
-//	RequestID -> RealIP -> structured log -> Recoverer -> Timeout
+//	otelhttp span -> RequestID -> RealIP -> structured log -> Recoverer -> Timeout
 //
 // (see middleware_log.go for the log/Recoverer steps and RequestTimeout
 // below), a chi-native-text-free 404/405 envelope, and the unauthenticated
 // /healthz and /readyz probes. Callers add their own routes on the returned
 // router (e.g. router.Get("/v1/...", ...)) after wrapping them in whatever
 // auth middleware (internal/platform/auth) a given route needs.
+//
+// The otelhttp step wraps every request in a server span via
+// otelhttp.NewMiddleware, reading the process-wide TracerProvider
+// registered by internal/platform/observability.Setup (see that package's
+// own doc comment) through OpenTelemetry's global API -- it runs FIRST in
+// the chain so the span covers request ID assignment, logging and every
+// downstream handler. When Setup was never called (or was called with
+// observability disabled), otel's global TracerProvider is its own no-op
+// implementation, so this middleware costs a few no-op interface calls per
+// request and never blocks or fails.
+//
+// metricsHandler, when non-nil, is mounted at GET /metrics (unauthenticated,
+// alongside /healthz and /readyz) -- typically
+// internal/platform/observability.Handle.MetricsHandler, serving
+// Prometheus-exposition-format metrics. A nil metricsHandler (observability
+// disabled, or a caller/test that does not need it) means NO /metrics route
+// is registered at all, rather than one serving an empty body.
 //
 // The "RealIP" step uses chimw.ClientIPFromRemoteAddr rather than the
 // deprecated chimw.RealIP: chimw.RealIP blindly trusts client-supplied
@@ -34,12 +52,13 @@ const DefaultRequestTimeout = 30 * time.Second
 // this service's actual reverse-proxy topology is known, this can be
 // swapped for chimw.ClientIPFromXFFTrustedProxies with the right trusted
 // proxy count.
-func NewRouter(logger *slog.Logger, ready ReadinessCheck, timeout time.Duration) chi.Router {
+func NewRouter(logger *slog.Logger, ready ReadinessCheck, timeout time.Duration, metricsHandler http.Handler) chi.Router {
 	if timeout <= 0 {
 		timeout = DefaultRequestTimeout
 	}
 
 	r := chi.NewRouter()
+	r.Use(otelhttp.NewMiddleware("mesaposta-api"))
 	r.Use(chimw.RequestID)
 	r.Use(chimw.ClientIPFromRemoteAddr)
 	r.Use(RequestLogger(logger))
@@ -51,6 +70,9 @@ func NewRouter(logger *slog.Logger, ready ReadinessCheck, timeout time.Duration)
 
 	r.Get("/healthz", Healthz)
 	r.Get("/readyz", Readyz(ready))
+	if metricsHandler != nil {
+		r.Handle("/metrics", metricsHandler)
+	}
 
 	return r
 }

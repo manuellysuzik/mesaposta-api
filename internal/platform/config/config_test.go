@@ -128,6 +128,12 @@ func TestLoadFrom_Defaults(t *testing.T) {
 	if cfg.DBConnectTimeout.String() != "5s" {
 		t.Errorf("cfg.DBConnectTimeout = %v, want 5s", cfg.DBConnectTimeout)
 	}
+	if cfg.OTELServiceName != "mesaposta-api" {
+		t.Errorf("cfg.OTELServiceName = %q, want default %q", cfg.OTELServiceName, "mesaposta-api")
+	}
+	if cfg.OTELExporterOTLPEndpoint != "" {
+		t.Errorf("cfg.OTELExporterOTLPEndpoint = %q, want default empty string (observability off)", cfg.OTELExporterOTLPEndpoint)
+	}
 }
 
 func TestLoadFrom_ExplicitOverrides(t *testing.T) {
@@ -139,6 +145,8 @@ func TestLoadFrom_ExplicitOverrides(t *testing.T) {
 	env["DB_MAX_CONN_LIFETIME"] = "2h"
 	env["DB_MAX_CONN_IDLE_TIME"] = "15m"
 	env["DB_CONNECT_TIMEOUT"] = "10s"
+	env["OTEL_SERVICE_NAME"] = "mesaposta-api-staging"
+	env["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://jaeger:4318"
 
 	cfg, err := config.LoadFrom(envMap(env))
 	if err != nil {
@@ -165,6 +173,12 @@ func TestLoadFrom_ExplicitOverrides(t *testing.T) {
 	}
 	if cfg.DBConnectTimeout.String() != "10s" {
 		t.Errorf("cfg.DBConnectTimeout = %v, want 10s", cfg.DBConnectTimeout)
+	}
+	if cfg.OTELServiceName != "mesaposta-api-staging" {
+		t.Errorf("cfg.OTELServiceName = %q, want %q", cfg.OTELServiceName, "mesaposta-api-staging")
+	}
+	if cfg.OTELExporterOTLPEndpoint != "http://jaeger:4318" {
+		t.Errorf("cfg.OTELExporterOTLPEndpoint = %q, want %q", cfg.OTELExporterOTLPEndpoint, "http://jaeger:4318")
 	}
 }
 

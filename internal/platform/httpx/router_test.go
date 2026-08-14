@@ -22,7 +22,7 @@ func alwaysReady(context.Context) error { return nil }
 
 func TestRouter_UnknownRoute_Returns404Envelope(t *testing.T) {
 	var buf bytes.Buffer
-	router := httpx.NewRouter(testLogger(&buf), alwaysReady, time.Second)
+	router := httpx.NewRouter(testLogger(&buf), alwaysReady, time.Second, nil)
 
 	req := httptest.NewRequest("GET", "/does-not-exist", nil)
 	rec := httptest.NewRecorder()
@@ -45,7 +45,7 @@ func TestRouter_UnknownRoute_Returns404Envelope(t *testing.T) {
 
 func TestRouter_WrongMethodOnExistingRoute_Returns405Envelope(t *testing.T) {
 	var buf bytes.Buffer
-	router := httpx.NewRouter(testLogger(&buf), alwaysReady, time.Second)
+	router := httpx.NewRouter(testLogger(&buf), alwaysReady, time.Second, nil)
 	router.Get("/widgets", func(w http.ResponseWriter, r *http.Request) {
 		httpx.RespondData(w, r, 200, map[string]string{"ok": "yes"}, nil)
 	})
@@ -68,7 +68,7 @@ func TestRouter_WrongMethodOnExistingRoute_Returns405Envelope(t *testing.T) {
 
 func TestRouter_PanicInHandler_Returns500EnvelopeWithoutStackTraceInBody(t *testing.T) {
 	var buf bytes.Buffer
-	router := httpx.NewRouter(testLogger(&buf), alwaysReady, time.Second)
+	router := httpx.NewRouter(testLogger(&buf), alwaysReady, time.Second, nil)
 	router.Get("/panic", func(w http.ResponseWriter, r *http.Request) {
 		panic("something exploded: secret-detail-xyz")
 	})
@@ -99,7 +99,7 @@ func TestRouter_PanicInHandler_Returns500EnvelopeWithoutStackTraceInBody(t *test
 
 func TestRouter_RequestID_GeneratedWhenClientOmitsIt(t *testing.T) {
 	var buf bytes.Buffer
-	router := httpx.NewRouter(testLogger(&buf), alwaysReady, time.Second)
+	router := httpx.NewRouter(testLogger(&buf), alwaysReady, time.Second, nil)
 	router.Get("/echo", func(w http.ResponseWriter, r *http.Request) {
 		httpx.RespondData(w, r, 200, nil, nil)
 	})
@@ -115,7 +115,7 @@ func TestRouter_RequestID_GeneratedWhenClientOmitsIt(t *testing.T) {
 
 func TestRouter_RequestID_PropagatedWhenClientSendsIt(t *testing.T) {
 	var buf bytes.Buffer
-	router := httpx.NewRouter(testLogger(&buf), alwaysReady, time.Second)
+	router := httpx.NewRouter(testLogger(&buf), alwaysReady, time.Second, nil)
 	router.Get("/echo", func(w http.ResponseWriter, r *http.Request) {
 		httpx.RespondData(w, r, 200, nil, nil)
 	})
@@ -140,7 +140,7 @@ func TestRouter_RequestID_PropagatedWhenClientSendsIt(t *testing.T) {
 func TestRouter_Timeout_ReturnsErrorEnvelopeInsteadOfHanging(t *testing.T) {
 	var buf bytes.Buffer
 	const configuredTimeout = 30 * time.Millisecond
-	router := httpx.NewRouter(testLogger(&buf), alwaysReady, configuredTimeout)
+	router := httpx.NewRouter(testLogger(&buf), alwaysReady, configuredTimeout, nil)
 	router.Get("/slow", func(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-r.Context().Done():
@@ -174,7 +174,7 @@ func TestRouter_Timeout_ReturnsErrorEnvelopeInsteadOfHanging(t *testing.T) {
 
 func TestRouter_Healthz_MountedAndUnauthenticated(t *testing.T) {
 	var buf bytes.Buffer
-	router := httpx.NewRouter(testLogger(&buf), alwaysReady, time.Second)
+	router := httpx.NewRouter(testLogger(&buf), alwaysReady, time.Second, nil)
 
 	req := httptest.NewRequest("GET", "/healthz", nil)
 	rec := httptest.NewRecorder()
@@ -190,7 +190,7 @@ func TestNewRouter_ZeroTimeoutFallsBackToDefault(t *testing.T) {
 	// Passing 0 must not panic and must still produce a usable router --
 	// exercises NewRouter's "timeout <= 0 -> DefaultRequestTimeout" branch
 	// without actually waiting out the (long) default.
-	router := httpx.NewRouter(testLogger(&buf), alwaysReady, 0)
+	router := httpx.NewRouter(testLogger(&buf), alwaysReady, 0, nil)
 
 	req := httptest.NewRequest("GET", "/healthz", nil)
 	rec := httptest.NewRecorder()
@@ -219,11 +219,45 @@ func TestRequestLogger_HandlesMissingUpstreamRequestID(t *testing.T) {
 	}
 }
 
+func TestRouter_Metrics_NotMountedWhenHandlerNil(t *testing.T) {
+	var buf bytes.Buffer
+	router := httpx.NewRouter(testLogger(&buf), alwaysReady, time.Second, nil)
+
+	req := httptest.NewRequest("GET", "/metrics", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != 404 {
+		t.Fatalf("status = %d, want 404 (no /metrics route when metricsHandler is nil)", rec.Code)
+	}
+}
+
+func TestRouter_Metrics_MountedWhenHandlerProvided(t *testing.T) {
+	var buf bytes.Buffer
+	metricsBody := "# HELP fake_metric a fake metric\nfake_metric 1\n"
+	metricsHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(metricsBody))
+	})
+	router := httpx.NewRouter(testLogger(&buf), alwaysReady, time.Second, metricsHandler)
+
+	req := httptest.NewRequest("GET", "/metrics", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if rec.Body.String() != metricsBody {
+		t.Fatalf("body = %q, want %q", rec.Body.String(), metricsBody)
+	}
+}
+
 func TestRouter_Readyz_ReflectsReadinessCheck(t *testing.T) {
 	var buf bytes.Buffer
 	router := httpx.NewRouter(testLogger(&buf), func(context.Context) error {
 		return context.DeadlineExceeded
-	}, time.Second)
+	}, time.Second, nil)
 
 	req := httptest.NewRequest("GET", "/readyz", nil)
 	rec := httptest.NewRecorder()

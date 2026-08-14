@@ -38,7 +38,7 @@ func newTestApp(t *testing.T) http.Handler {
 	// pool is intentionally nil: every test in this file either hits
 	// /healthz (which never touches the database) or a request Authenticate/
 	// RequireRole rejects before it ever reaches a database-backed handler.
-	return app.NewApp(cfg, nil, nil, verifier)
+	return app.NewApp(cfg, nil, nil, verifier, nil)
 }
 
 func decodeEnvelope(t *testing.T, rec *httptest.ResponseRecorder) httpx.Envelope {

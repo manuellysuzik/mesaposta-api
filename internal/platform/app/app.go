@@ -103,6 +103,11 @@ func BuildIssuer(cfg config.Config) (*token.Issuer, error) {
 // routes under /v1, and internal/modules/ordering's PUBLIC digital-menu
 // routes under /public/v1/{tenantSlug} -- wired through verifier and pool.
 //
+// metricsHandler, when non-nil, is mounted at GET /metrics by
+// httpx.NewRouter -- see that function's own doc comment. Pass nil to
+// disable the route entirely (e.g. observability.Setup returned a disabled
+// Handle, or a test that does not need it).
+//
 // logger defaults to slog.Default() when nil. pool may be nil ONLY for
 // tests that never exercise a route touching the database (e.g. /healthz,
 // or a request rejected by Authenticate/RequireRole before it ever reaches
@@ -124,14 +129,14 @@ func BuildIssuer(cfg config.Config) (*token.Issuer, error) {
 // would be the more complete fix, left for a later phase if/when this
 // service ever needs to construct/tear down more than one *http.Handler
 // per process.
-func NewApp(cfg config.Config, pool *db.Pool, logger *slog.Logger, verifier *token.Verifier) http.Handler {
+func NewApp(cfg config.Config, pool *db.Pool, logger *slog.Logger, verifier *token.Verifier, metricsHandler http.Handler) http.Handler {
 	_ = cfg // reserved for future per-environment wiring; validated by the caller (config.Load).
 
 	if logger == nil {
 		logger = slog.Default()
 	}
 
-	router := httpx.NewRouter(logger, readinessCheck(pool), httpx.DefaultRequestTimeout)
+	router := httpx.NewRouter(logger, readinessCheck(pool), httpx.DefaultRequestTimeout, metricsHandler)
 
 	router.Route("/v1/_probe", func(r chi.Router) {
 		r.Use(auth.Authenticate(verifier))

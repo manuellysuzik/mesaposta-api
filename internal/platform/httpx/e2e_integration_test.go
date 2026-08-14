@@ -110,7 +110,7 @@ func setupE2EApp(t *testing.T) (baseURL string, issuer *token.Issuer) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	handler := app.NewApp(cfg, pool, logger, verifier)
+	handler := app.NewApp(cfg, pool, logger, verifier, nil)
 
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
