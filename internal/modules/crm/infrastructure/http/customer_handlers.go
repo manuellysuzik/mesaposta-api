@@ -5,6 +5,7 @@ import (
 
 	"github.com/manuellysuzik/mesaposta-api/internal/modules/crm/application"
 	"github.com/manuellysuzik/mesaposta-api/internal/modules/crm/domain"
+	"github.com/manuellysuzik/mesaposta-api/internal/platform/auth"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/httpx"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/tenant"
 )
@@ -94,7 +95,7 @@ func creditLoyaltyPointsHandler(uow domain.UnitOfWork) http.HandlerFunc {
 			CustomerID: id,
 			Points:     points,
 			Reason:     req.Reason,
-		}); err != nil {
+		}, auth.ActorIDFrom(r.Context())); err != nil {
 			httpx.RespondError(w, r, err)
 			return
 		}
@@ -146,7 +147,7 @@ func redeemLoyaltyPointsHandler(uow domain.UnitOfWork) http.HandlerFunc {
 			CustomerID: id,
 			Points:     points,
 			Reason:     req.Reason,
-		}); err != nil {
+		}, auth.ActorIDFrom(r.Context())); err != nil {
 			httpx.RespondError(w, r, err)
 			return
 		}

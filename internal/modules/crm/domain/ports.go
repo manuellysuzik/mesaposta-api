@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 
+	"github.com/manuellysuzik/mesaposta-api/internal/platform/audit"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/outbox"
 )
 
@@ -41,6 +42,11 @@ type Repositories interface {
 	Customers() CustomerRepository
 	LoyaltyEntries() LoyaltyEntryRepository
 	Events() outbox.DomainEventPublisher
+	// Audit returns the audit.Recorder bound to this unit of work, for the
+	// same reason Events does: an audit entry is a side effect that must
+	// commit atomically WITH the mutation it describes. Mirrors
+	// internal/modules/operations/domain.Repositories.Audit() exactly.
+	Audit() audit.Recorder
 }
 
 // CustomerRepository is the persistence port for the Customer aggregate

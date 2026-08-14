@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/manuellysuzik/mesaposta-api/internal/modules/crm/domain"
+	"github.com/manuellysuzik/mesaposta-api/internal/platform/audit"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/errs"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/outbox"
 )
@@ -32,6 +33,7 @@ type fakeState struct {
 	customers      map[domain.ID]*domain.Customer
 	loyaltyEntries []domain.LoyaltyEntry
 	events         []outbox.DomainEvent
+	auditEntries   []audit.Entry
 }
 
 // newFakeState returns an empty, ready-to-use fakeState.
@@ -50,6 +52,7 @@ func (s *fakeState) clone() *fakeState {
 		customers:      make(map[domain.ID]*domain.Customer, len(s.customers)),
 		loyaltyEntries: append([]domain.LoyaltyEntry{}, s.loyaltyEntries...),
 		events:         append([]outbox.DomainEvent{}, s.events...),
+		auditEntries:   append([]audit.Entry{}, s.auditEntries...),
 	}
 	for id, customer := range s.customers {
 		customerCopy := *customer
@@ -70,6 +73,7 @@ type fakeRepoErrors struct {
 	customerUpdateWithVersion error
 	loyaltyEntryInsert        error
 	eventsPublish             error
+	auditRecord               error
 }
 
 // fakeUnitOfWork is an in-memory domain.UnitOfWork. Its zero value is not
@@ -142,6 +146,10 @@ func (r *fakeRepositories) Events() outbox.DomainEventPublisher {
 	return &fakeEventPublisher{uow: r.uow, state: r.state}
 }
 
+func (r *fakeRepositories) Audit() audit.Recorder {
+	return &fakeAuditRecorder{uow: r.uow, state: r.state}
+}
+
 // --- CustomerRepository ---------------------------------------------------
 
 type fakeCustomerRepository struct {
@@ -212,6 +220,26 @@ func (p *fakeEventPublisher) Publish(_ context.Context, events ...outbox.DomainE
 		return err
 	}
 	p.state.events = append(p.state.events, events...)
+	return nil
+}
+
+// --- audit.Recorder -----------------------------------------------------
+
+type fakeAuditRecorder struct {
+	uow   *fakeUnitOfWork
+	state *fakeState
+}
+
+var _ audit.Recorder = (*fakeAuditRecorder)(nil)
+
+func (a *fakeAuditRecorder) Record(_ context.Context, entries ...audit.Entry) error {
+	if len(entries) == 0 {
+		return nil
+	}
+	if err := a.uow.errors.auditRecord; err != nil {
+		return err
+	}
+	a.state.auditEntries = append(a.state.auditEntries, entries...)
 	return nil
 }
 

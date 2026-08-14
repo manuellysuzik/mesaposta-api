@@ -5,8 +5,15 @@ import (
 
 	"github.com/manuellysuzik/mesaposta-api/internal/modules/crm/contracts"
 	"github.com/manuellysuzik/mesaposta-api/internal/modules/crm/domain"
+	"github.com/manuellysuzik/mesaposta-api/internal/platform/audit"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/outbox"
 )
+
+// auditActionLoyaltyPointsRedeemed is this use case's audit action
+// identifier -- see credit_loyalty_points.go's own constants for why this
+// is a constant rather than an inline literal. auditEntityCustomer is
+// shared with that file (same package, same entity type).
+const auditActionLoyaltyPointsRedeemed = "loyalty_entry.redeemed"
 
 // RedeemLoyaltyPointsInput carries everything RedeemLoyaltyPoints needs to
 // redeem points from a single Customer's loyalty balance.
@@ -33,13 +40,19 @@ type RedeemLoyaltyPointsInput struct {
 // rather than directly against the domain aggregate -- exactly mirroring
 // internal/modules/operations/application.RegisterStockMovement's own
 // "saida" branch for the identical shape of invariant.
-func RedeemLoyaltyPoints(ctx context.Context, uow domain.UnitOfWork, input RedeemLoyaltyPointsInput) error {
+//
+// actorID identifies who requested the redemption, for the audit trail:
+// best-effort ("" when unknown, never a placeholder), sourced by the HTTP
+// layer from the authenticated access token's "sub" claim (see
+// internal/platform/auth.ActorIDFrom). See docs/adr/0006-audit-log.md.
+func RedeemLoyaltyPoints(ctx context.Context, uow domain.UnitOfWork, input RedeemLoyaltyPointsInput, actorID string) error {
 	return uow.Do(ctx, func(ctx context.Context, r domain.Repositories) error {
 		customer, err := r.Customers().FindByID(ctx, input.CustomerID)
 		if err != nil {
 			return err
 		}
 		expectedVersion := customer.Version()
+		balanceBeforeRedeem := customer.LoyaltyPoints().Points()
 
 		if err := customer.RedeemPoints(input.Points); err != nil {
 			return err
@@ -64,7 +77,26 @@ func RedeemLoyaltyPoints(ctx context.Context, uow domain.UnitOfWork, input Redee
 		if err != nil {
 			return err
 		}
-		return r.Events().Publish(ctx, event)
+		if err := r.Events().Publish(ctx, event); err != nil {
+			return err
+		}
+
+		// Audit entry recorded last -- see
+		// CreditLoyaltyPoints' identical rationale.
+		auditEntry, err := audit.NewEntry(
+			customer.TenantID(),
+			actorID,
+			auditActionLoyaltyPointsRedeemed,
+			auditEntityCustomer,
+			customer.ID().String(),
+			entry.CreatedAt(),
+			map[string]any{"loyalty_points_balance": balanceBeforeRedeem},
+			map[string]any{"loyalty_points_balance": customer.LoyaltyPoints().Points(), "points_redeemed": input.Points.Points(), "reason": input.Reason},
+		)
+		if err != nil {
+			return err
+		}
+		return r.Audit().Record(ctx, auditEntry)
 	})
 }
 

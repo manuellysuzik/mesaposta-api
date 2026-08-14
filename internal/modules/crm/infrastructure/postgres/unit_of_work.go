@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/manuellysuzik/mesaposta-api/internal/modules/crm/domain"
+	"github.com/manuellysuzik/mesaposta-api/internal/platform/audit"
+	auditpg "github.com/manuellysuzik/mesaposta-api/internal/platform/audit/postgres"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/db"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/outbox"
 	outboxpg "github.com/manuellysuzik/mesaposta-api/internal/platform/outbox/postgres"
@@ -102,4 +104,24 @@ var _ outbox.DomainEventPublisher = eventPublisher{}
 
 func (p eventPublisher) Publish(ctx context.Context, events ...outbox.DomainEvent) error {
 	return outboxpg.WithScope(ctx, p.scope, events...)
+}
+
+func (r *repositories) Audit() audit.Recorder {
+	return auditRecorder{scope: r.scope}
+}
+
+// auditRecorder adapts auditpg.WithScope to the audit.Recorder interface,
+// scoped to the SAME transaction every other repository handed out by this
+// Do call uses. Mirrors internal/modules/operations/infrastructure/postgres
+// and internal/modules/catalog/infrastructure/postgres's own auditRecorder
+// exactly.
+type auditRecorder struct {
+	scope *db.Scope
+}
+
+// compile-time check: auditRecorder must satisfy audit.Recorder.
+var _ audit.Recorder = auditRecorder{}
+
+func (r auditRecorder) Record(ctx context.Context, entries ...audit.Entry) error {
+	return auditpg.WithScope(ctx, r.scope, entries...)
 }

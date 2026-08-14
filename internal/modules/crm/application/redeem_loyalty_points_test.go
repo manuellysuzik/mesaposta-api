@@ -24,7 +24,7 @@ func TestRedeemLoyaltyPoints_Valid_UpdatesBalanceAndAppendsEntry(t *testing.T) {
 		CustomerID: customer.ID(),
 		Points:     mustFakeLoyaltyPoints(t, 30),
 		Reason:     "Resgate de brinde",
-	})
+	}, "user-1")
 
 	// Assert
 	if err != nil {
@@ -43,6 +43,16 @@ func TestRedeemLoyaltyPoints_Valid_UpdatesBalanceAndAppendsEntry(t *testing.T) {
 	}
 	if len(snapshot.events) != 1 {
 		t.Errorf("events = %d, want 1", len(snapshot.events))
+	}
+	if len(snapshot.auditEntries) != 1 {
+		t.Fatalf("audit entries = %d, want 1", len(snapshot.auditEntries))
+	}
+	auditEntry := snapshot.auditEntries[0]
+	if auditEntry.ActorID != "user-1" {
+		t.Errorf("auditEntry.ActorID = %q, want %q", auditEntry.ActorID, "user-1")
+	}
+	if auditEntry.Action != "loyalty_entry.redeemed" {
+		t.Errorf("auditEntry.Action = %q, want %q", auditEntry.Action, "loyalty_entry.redeemed")
 	}
 }
 
@@ -70,7 +80,7 @@ func TestRedeemLoyaltyPoints_InsufficientBalance_ReturnsConflictAndPersistsNothi
 		CustomerID: customer.ID(),
 		Points:     mustFakeLoyaltyPoints(t, 50),
 		Reason:     "Resgate de brinde caro demais",
-	})
+	}, "user-1")
 
 	// Assert: the error.
 	if err == nil {
@@ -95,6 +105,9 @@ func TestRedeemLoyaltyPoints_InsufficientBalance_ReturnsConflictAndPersistsNothi
 	if len(snapshot.events) != 0 {
 		t.Errorf("events = %d, want 0", len(snapshot.events))
 	}
+	if len(snapshot.auditEntries) != 0 {
+		t.Errorf("audit entries = %v, want none: the invariant fails BEFORE any write is attempted", snapshot.auditEntries)
+	}
 }
 
 func TestRedeemLoyaltyPoints_CustomerNotFound_ReturnsNotFoundError(t *testing.T) {
@@ -106,7 +119,7 @@ func TestRedeemLoyaltyPoints_CustomerNotFound_ReturnsNotFoundError(t *testing.T)
 		CustomerID: mustFakeCustomer(t).ID(),
 		Points:     mustFakeLoyaltyPoints(t, 10),
 		Reason:     "Resgate",
-	})
+	}, "user-1")
 
 	// Assert
 	if !errs.IsKind(err, errs.NotFound) {
@@ -129,7 +142,7 @@ func TestRedeemLoyaltyPoints_ZeroPoints_ReturnsInvalidError(t *testing.T) {
 		CustomerID: customer.ID(),
 		Points:     mustFakeLoyaltyPoints(t, 0),
 		Reason:     "Resgate",
-	})
+	}, "user-1")
 
 	// Assert
 	if !errs.IsKind(err, errs.Invalid) {

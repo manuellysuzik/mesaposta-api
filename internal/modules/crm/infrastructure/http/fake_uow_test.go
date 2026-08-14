@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/manuellysuzik/mesaposta-api/internal/modules/crm/domain"
+	"github.com/manuellysuzik/mesaposta-api/internal/platform/audit"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/errs"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/outbox"
 )
@@ -21,6 +22,7 @@ type fakeState struct {
 	customers      map[domain.ID]*domain.Customer
 	loyaltyEntries []domain.LoyaltyEntry
 	events         []outbox.DomainEvent
+	auditEntries   []audit.Entry
 }
 
 func newFakeState() *fakeState {
@@ -32,6 +34,7 @@ func (s *fakeState) clone() *fakeState {
 		customers:      make(map[domain.ID]*domain.Customer, len(s.customers)),
 		loyaltyEntries: append([]domain.LoyaltyEntry{}, s.loyaltyEntries...),
 		events:         append([]outbox.DomainEvent{}, s.events...),
+		auditEntries:   append([]audit.Entry{}, s.auditEntries...),
 	}
 	for id, c := range s.customers {
 		cc := *c
@@ -92,6 +95,10 @@ func (r *fakeRepositories) Events() outbox.DomainEventPublisher {
 	return &fakeEventPublisher{state: r.state}
 }
 
+func (r *fakeRepositories) Audit() audit.Recorder {
+	return &fakeAuditRecorder{state: r.state}
+}
+
 type fakeCustomerRepository struct {
 	state *fakeState
 }
@@ -135,5 +142,16 @@ var _ outbox.DomainEventPublisher = (*fakeEventPublisher)(nil)
 
 func (p *fakeEventPublisher) Publish(_ context.Context, events ...outbox.DomainEvent) error {
 	p.state.events = append(p.state.events, events...)
+	return nil
+}
+
+type fakeAuditRecorder struct {
+	state *fakeState
+}
+
+var _ audit.Recorder = (*fakeAuditRecorder)(nil)
+
+func (a *fakeAuditRecorder) Record(_ context.Context, entries ...audit.Entry) error {
+	a.state.auditEntries = append(a.state.auditEntries, entries...)
 	return nil
 }
