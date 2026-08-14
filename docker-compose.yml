@@ -46,6 +46,27 @@ services:
     depends_on:
       - api
 
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: mesaposta-grafana
+    environment:
+      # Dev-only convenience: anonymous viewer access, no login screen to
+      # click through just to see the p99 dashboard locally. Never set
+      # these in a real deployment.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - mesaposta
+    depends_on:
+      - prometheus
+
   api:
     build: .
     container_name: mesaposta-api
@@ -87,3 +108,4 @@ networks:
 volumes:
   postgres_data:
   prometheus_data:
+  grafana_data:

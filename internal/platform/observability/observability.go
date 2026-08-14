@@ -41,10 +41,18 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
+	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
+
+// meterName identifies this package as the OTel instrumentation scope for
+// the gauges RegisterPoolGauges creates -- the same role
+// defaultServiceName plays for the resource-level "service.name", but at
+// the instrumentation-library level (see otel.Meter's own doc comment).
+const meterName = "github.com/manuellysuzik/mesaposta-api/internal/platform/observability"
 
 // serviceNameKey is the OTel resource attribute key otel's own
 // semconv.ServiceNameKey constant resolves to ("service.name"). It is
@@ -236,4 +244,79 @@ func setupMetrics(res *resource.Resource) (*sdkmetric.MeterProvider, http.Handle
 
 	handler := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 	return meterProvider, handler, nil
+}
+
+// PoolStats is the subset of a connection pool's own stats (e.g.
+// *pgxpool.Stat, see internal/platform/db.Pool.Stat) RegisterPoolGauges
+// reports as OTel gauges, following the db.client.connection.*
+// semantic conventions (go.opentelemetry.io/otel/semconv/v1.26.0). It is a
+// plain struct rather than an interface over *pgxpool.Stat itself so this
+// package does not need to import pgx -- see the package doc comment for
+// why observability deliberately stays agnostic of any one concrete
+// dependency it instruments; composing RegisterPoolGauges with a real pool
+// is left to a caller that already imports pgx, such as cmd/api/run.go.
+type PoolStats struct {
+	// UsedConns is the number of connections currently acquired (in use).
+	UsedConns int64
+	// IdleConns is the number of connections currently idle in the pool.
+	IdleConns int64
+	// MaxConns is the maximum number of connections the pool may open.
+	MaxConns int64
+}
+
+// RegisterPoolGauges registers OTel asynchronous gauges reporting a
+// connection pool's used/idle/max connection counts
+// (db.client.connection.count, split by the db.client.connections.state
+// attribute, and db.client.connection.max), sourced by calling statFn on
+// every metrics scrape rather than on a timer -- consistent with
+// internal/platform/db.Pool.Stat() itself being a live snapshot, not
+// something continuously pushed.
+//
+// These are DB connection pool metrics, not HTTP ones, but pool
+// exhaustion is a common root cause of HTTP p99 tail latency: a request
+// queued waiting for a pooled connection shows up as HTTP latency, not
+// database latency. Exporting them alongside http.server.request.duration
+// (see internal/platform/httpx.RouteTag for how that histogram gets a
+// usable per-route "http.route" label) is what lets that be diagnosed from
+// a dashboard instead of guessed at.
+//
+// Safe to call even when observability is disabled (Setup was never
+// called, or was called with an empty OTLPEndpoint): otel's global
+// MeterProvider is then its own no-op implementation, so every gauge
+// registered here is simply never invoked. Also safe to call before or
+// after Setup: otel's global Meter is a delegating proxy that binds to
+// whichever MeterProvider is current at the time metrics are actually
+// collected, not at instrument-creation time.
+func RegisterPoolGauges(statFn func() PoolStats) error {
+	meter := otel.Meter(meterName)
+
+	count, err := meter.Int64ObservableGauge(
+		semconv.DBClientConnectionCountName,
+		metric.WithUnit(semconv.DBClientConnectionCountUnit),
+		metric.WithDescription(semconv.DBClientConnectionCountDescription),
+	)
+	if err != nil {
+		return fmt.Errorf("observability: building %s gauge: %w", semconv.DBClientConnectionCountName, err)
+	}
+
+	max, err := meter.Int64ObservableGauge(
+		semconv.DBClientConnectionMaxName,
+		metric.WithUnit(semconv.DBClientConnectionMaxUnit),
+		metric.WithDescription(semconv.DBClientConnectionMaxDescription),
+	)
+	if err != nil {
+		return fmt.Errorf("observability: building %s gauge: %w", semconv.DBClientConnectionMaxName, err)
+	}
+
+	_, err = meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+		stats := statFn()
+		o.ObserveInt64(count, stats.UsedConns, metric.WithAttributes(semconv.DBClientConnectionsStateUsed))
+		o.ObserveInt64(count, stats.IdleConns, metric.WithAttributes(semconv.DBClientConnectionsStateIdle))
+		o.ObserveInt64(max, stats.MaxConns)
+		return nil
+	}, count, max)
+	if err != nil {
+		return fmt.Errorf("observability: registering db pool gauges callback: %w", err)
+	}
+	return nil
 }

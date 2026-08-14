@@ -124,6 +124,23 @@ func run(ctx context.Context, getenv func(string) string, stderr, stdout io.Writ
 	}
 	defer pool.Close()
 
+	// Reports connection-pool saturation (used/idle/max) alongside the
+	// http.server.request.duration histogram otelhttp already records --
+	// see observability.RegisterPoolGauges' own doc comment for why pool
+	// exhaustion is a common, otherwise-invisible root cause of HTTP p99
+	// tail latency. Safe regardless of whether observability is enabled.
+	if err := observability.RegisterPoolGauges(func() observability.PoolStats {
+		stat := pool.Stat()
+		return observability.PoolStats{
+			UsedConns: int64(stat.AcquiredConns()),
+			IdleConns: int64(stat.IdleConns()),
+			MaxConns:  int64(stat.MaxConns()),
+		}
+	}); err != nil {
+		fmt.Fprintln(stderr, "mesaposta-api: registering db pool gauges:", err)
+		return 1
+	}
+
 	if strings.EqualFold(getenv(migrateOnBootEnvVar), "true") {
 		migrateURL := getenv(migrateDatabaseURLEnvVar)
 		if migrateURL == "" {

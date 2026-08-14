@@ -5,6 +5,11 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/observability"
 )
 
@@ -100,5 +105,58 @@ func TestSetup_ValidEndpoint_RegistersRealProvidersWithoutNetworkIO(t *testing.T
 	defer shutdownCancel()
 	if err := h.Shutdown(shutdownCtx); err != nil {
 		t.Fatalf("Shutdown returned an unexpected error: %v", err)
+	}
+}
+
+func TestRegisterPoolGauges_ReportsUsedIdleMaxFromStatFn(t *testing.T) {
+	// A ManualReader lets this test pull a snapshot on demand (Collect)
+	// instead of waiting for a real export interval -- it never talks to
+	// Prometheus/OTLP, so this stays exactly as network-free as every other
+	// test in this file.
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	prev := otel.GetMeterProvider()
+	otel.SetMeterProvider(mp)
+	t.Cleanup(func() { otel.SetMeterProvider(prev) })
+
+	if err := observability.RegisterPoolGauges(func() observability.PoolStats {
+		return observability.PoolStats{UsedConns: 3, IdleConns: 7, MaxConns: 10}
+	}); err != nil {
+		t.Fatalf("RegisterPoolGauges returned an error: %v", err)
+	}
+
+	var data metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &data); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	// metric name -> "db.client.connections.state" attribute value (or ""
+	// for db.client.connection.max, which carries no state attribute) ->
+	// observed value.
+	got := map[string]map[string]int64{}
+	for _, sm := range data.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			gauge, ok := m.Data.(metricdata.Gauge[int64])
+			if !ok {
+				t.Fatalf("metric %s: Data = %T, want metricdata.Gauge[int64]", m.Name, m.Data)
+			}
+			if got[m.Name] == nil {
+				got[m.Name] = map[string]int64{}
+			}
+			for _, dp := range gauge.DataPoints {
+				state, _ := dp.Attributes.Value(attribute.Key("db.client.connections.state"))
+				got[m.Name][state.AsString()] = dp.Value
+			}
+		}
+	}
+
+	if v := got["db.client.connection.count"]["used"]; v != 3 {
+		t.Errorf(`db.client.connection.count{state="used"} = %d, want 3`, v)
+	}
+	if v := got["db.client.connection.count"]["idle"]; v != 7 {
+		t.Errorf(`db.client.connection.count{state="idle"} = %d, want 7`, v)
+	}
+	if v := got["db.client.connection.max"][""]; v != 10 {
+		t.Errorf("db.client.connection.max = %d, want 10", v)
 	}
 }

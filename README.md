@@ -159,6 +159,29 @@ fixo de 10s), antes de sair. Uma configuração inválida no boot imprime uma
 mensagem clara em stderr e sai com código de saída diferente de zero — nunca
 um stack trace de panic.
 
+### Observabilidade local (`docker-compose up`)
+
+`docker-compose.yml` sobe a stack completa (Postgres, `api`, Jaeger,
+Prometheus e Grafana) com `OTEL_EXPORTER_OTLP_ENDPOINT` já configurado —
+ver [`internal/platform/observability`](internal/platform/observability)
+para o que isso habilita (traces via OTLP/HTTP + métricas Prometheus em
+`/metrics`, incluindo o histograma `http.server.request.duration` usado
+para p50/p95/p99).
+
+```bash
+docker compose up --build
+```
+
+- **Grafana** — <http://localhost:3000> (acesso anônimo, sem login) — abre
+  direto no dashboard `mesaposta-api` (provisionado automaticamente via
+  [`deploy/grafana/`](deploy/grafana)), com latência p50/p95/p99 por rota,
+  taxa de erro 5xx e saturação do pool de conexões Postgres.
+- **Prometheus** — <http://localhost:9090> — para consultas PromQL ad-hoc.
+- **Jaeger UI** — <http://localhost:16686> — para inspecionar traces
+  individuais (útil junto com o `trace_id` que aparece nos logs
+  estruturados de cada requisição — ver
+  [`internal/platform/httpx`](internal/platform/httpx)).
+
 ## Como verificar a fitness function de arquitetura
 
 A suíte de arquitetura roda como um teste Go comum:

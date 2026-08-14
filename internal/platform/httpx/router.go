@@ -18,13 +18,14 @@ const DefaultRequestTimeout = 30 * time.Second
 // NewRouter builds the chi.Router every mesaposta-api HTTP entry point
 // shares: the fixed middleware chain
 //
-//	otelhttp span -> RequestID -> RealIP -> structured log -> Recoverer -> Timeout
+//	otelhttp span -> RouteTag -> RequestID -> RealIP -> structured log -> Recoverer -> Timeout
 //
-// (see middleware_log.go for the log/Recoverer steps and RequestTimeout
-// below), a chi-native-text-free 404/405 envelope, and the unauthenticated
-// /healthz and /readyz probes. Callers add their own routes on the returned
-// router (e.g. router.Get("/v1/...", ...)) after wrapping them in whatever
-// auth middleware (internal/platform/auth) a given route needs.
+// (see middleware_log.go for the log/Recoverer steps, middleware_route.go
+// for RouteTag, and RequestTimeout below), a chi-native-text-free 404/405
+// envelope, and the unauthenticated /healthz and /readyz probes. Callers
+// add their own routes on the returned router (e.g. router.Get("/v1/...",
+// ...)) after wrapping them in whatever auth middleware
+// (internal/platform/auth) a given route needs.
 //
 // The otelhttp step wraps every request in a server span via
 // otelhttp.NewMiddleware, reading the process-wide TracerProvider
@@ -35,6 +36,11 @@ const DefaultRequestTimeout = 30 * time.Second
 // observability disabled), otel's global TracerProvider is its own no-op
 // implementation, so this middleware costs a few no-op interface calls per
 // request and never blocks or fails.
+//
+// RouteTag runs immediately after: see its own doc comment for why, without
+// it, otelhttp's http.route attribute (and therefore every route-grouped
+// p99 query against http.server.request.duration) would be empty for every
+// request this chi-routed service ever serves.
 //
 // metricsHandler, when non-nil, is mounted at GET /metrics (unauthenticated,
 // alongside /healthz and /readyz) -- typically
@@ -59,6 +65,7 @@ func NewRouter(logger *slog.Logger, ready ReadinessCheck, timeout time.Duration,
 
 	r := chi.NewRouter()
 	r.Use(otelhttp.NewMiddleware("mesaposta-api"))
+	r.Use(RouteTag)
 	r.Use(chimw.RequestID)
 	r.Use(chimw.ClientIPFromRemoteAddr)
 	r.Use(RequestLogger(logger))
