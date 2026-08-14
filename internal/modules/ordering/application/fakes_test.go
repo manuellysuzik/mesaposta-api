@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/manuellysuzik/mesaposta-api/internal/modules/ordering/domain"
+	"github.com/manuellysuzik/mesaposta-api/internal/platform/audit"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/errs"
 )
 
@@ -27,6 +28,7 @@ type fakeState struct {
 	tables        map[domain.ID]*domain.Table
 	orders        map[domain.ID]*domain.Order
 	tableSessions map[[32]byte]domain.TableSession
+	auditEntries  []audit.Entry
 }
 
 func newFakeState() *fakeState {
@@ -42,6 +44,7 @@ func (s *fakeState) clone() *fakeState {
 		tables:        make(map[domain.ID]*domain.Table, len(s.tables)),
 		orders:        make(map[domain.ID]*domain.Order, len(s.orders)),
 		tableSessions: make(map[[32]byte]domain.TableSession, len(s.tableSessions)),
+		auditEntries:  append([]audit.Entry{}, s.auditEntries...),
 	}
 	for id, table := range s.tables {
 		tableCopy := *table
@@ -70,6 +73,7 @@ type fakeRepoErrors struct {
 	orderUpdateWithVersion error
 	sessionFindByTokenHash error
 	sessionInsert          error
+	auditRecord            error
 }
 
 // fakeUnitOfWork is an in-memory domain.UnitOfWork. Its zero value is not
@@ -127,6 +131,10 @@ func (r *fakeRepositories) Orders() domain.OrderRepository {
 
 func (r *fakeRepositories) TableSessions() domain.TableSessionRepository {
 	return &fakeTableSessionRepository{uow: r.uow, state: r.state}
+}
+
+func (r *fakeRepositories) Audit() audit.Recorder {
+	return &fakeAuditRecorder{uow: r.uow, state: r.state}
 }
 
 // --- TableRepository -----------------------------------------------------
@@ -261,4 +269,24 @@ func (r *fakeTableSessionRepository) FindByTokenHash(_ context.Context, hash [32
 		return nil, notFoundErr("table_session_not_found", "table session not found")
 	}
 	return &session, nil
+}
+
+// --- audit.Recorder -----------------------------------------------------
+
+type fakeAuditRecorder struct {
+	uow   *fakeUnitOfWork
+	state *fakeState
+}
+
+var _ audit.Recorder = (*fakeAuditRecorder)(nil)
+
+func (a *fakeAuditRecorder) Record(_ context.Context, entries ...audit.Entry) error {
+	if len(entries) == 0 {
+		return nil
+	}
+	if err := a.uow.errors.auditRecord; err != nil {
+		return err
+	}
+	a.state.auditEntries = append(a.state.auditEntries, entries...)
+	return nil
 }

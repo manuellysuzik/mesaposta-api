@@ -1,6 +1,10 @@
 package domain
 
-import "context"
+import (
+	"context"
+
+	"github.com/manuellysuzik/mesaposta-api/internal/platform/audit"
+)
 
 // UnitOfWork is the port through which the application layer (../application)
 // executes a single atomic operation spanning one or more of the
@@ -34,6 +38,12 @@ type Repositories interface {
 	Tables() TableRepository
 	Orders() OrderRepository
 	TableSessions() TableSessionRepository
+	// Audit returns the audit.Recorder bound to this unit of work, for the
+	// same reason every other module's own Audit() does: an audit entry is
+	// a side effect that must commit atomically WITH the mutation it
+	// describes. Mirrors internal/modules/operations/domain.Repositories.Audit()
+	// exactly.
+	Audit() audit.Recorder
 }
 
 // TableRepository is the persistence port for the Table aggregate.

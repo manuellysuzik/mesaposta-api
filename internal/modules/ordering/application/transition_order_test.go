@@ -47,7 +47,7 @@ func TestConfirmOrder_Valid_AdvancesStatusAndPersists(t *testing.T) {
 	state.orders[order.ID()] = order
 	uow := newFakeUnitOfWork(state)
 
-	got, err := application.ConfirmOrder(context.Background(), uow, order.ID())
+	got, err := application.ConfirmOrder(context.Background(), uow, order.ID(), "user-1")
 	if err != nil {
 		t.Fatalf("ConfirmOrder: unexpected error: %v", err)
 	}
@@ -58,12 +58,23 @@ func TestConfirmOrder_Valid_AdvancesStatusAndPersists(t *testing.T) {
 	if persisted.Status() != domain.OrderStatusConfirmado {
 		t.Errorf("persisted Status() = %q, want %q", persisted.Status(), domain.OrderStatusConfirmado)
 	}
+	snapshot := uow.snapshot()
+	if len(snapshot.auditEntries) != 1 {
+		t.Fatalf("audit entries = %d, want 1", len(snapshot.auditEntries))
+	}
+	entry := snapshot.auditEntries[0]
+	if entry.ActorID != "user-1" {
+		t.Errorf("entry.ActorID = %q, want %q", entry.ActorID, "user-1")
+	}
+	if entry.Action != "order.status_changed" {
+		t.Errorf("entry.Action = %q, want %q", entry.Action, "order.status_changed")
+	}
 }
 
 func TestConfirmOrder_NotFound_ReturnsNotFound(t *testing.T) {
 	uow := newFakeUnitOfWork(newFakeState())
 
-	_, err := application.ConfirmOrder(context.Background(), uow, domain.NewID())
+	_, err := application.ConfirmOrder(context.Background(), uow, domain.NewID(), "user-1")
 	if !errs.IsKind(err, errs.NotFound) {
 		t.Errorf("errs.KindOf(err) = %v, want errs.NotFound", errs.KindOf(err))
 	}
@@ -81,13 +92,16 @@ func TestStartPreparingOrder_WithoutConfirm_ReturnsConflictAndLeavesUntouched(t 
 	uow := newFakeUnitOfWork(state)
 	uow.errors.orderUpdateWithVersion = errUnexpectedPersistCall
 
-	_, err := application.StartPreparingOrder(context.Background(), uow, order.ID())
+	_, err := application.StartPreparingOrder(context.Background(), uow, order.ID(), "user-1")
 	if !errs.IsKind(err, errs.Conflict) {
 		t.Fatalf("errs.KindOf(err) = %v, want errs.Conflict", errs.KindOf(err))
 	}
 	persisted := uow.snapshot().orders[order.ID()]
 	if persisted.Status() != domain.OrderStatusPendenteConfirmacao {
 		t.Errorf("persisted Status() = %q, want unchanged %q", persisted.Status(), domain.OrderStatusPendenteConfirmacao)
+	}
+	if snapshot := uow.snapshot(); len(snapshot.auditEntries) != 0 {
+		t.Errorf("audit entries = %v, want none: the invariant fails BEFORE any write is attempted", snapshot.auditEntries)
 	}
 }
 
@@ -99,21 +113,24 @@ func TestOrderLifecycle_ConfirmPreparePronoDeliver(t *testing.T) {
 	uow := newFakeUnitOfWork(state)
 	ctx := context.Background()
 
-	if _, err := application.ConfirmOrder(ctx, uow, order.ID()); err != nil {
+	if _, err := application.ConfirmOrder(ctx, uow, order.ID(), "user-1"); err != nil {
 		t.Fatalf("ConfirmOrder: %v", err)
 	}
-	if _, err := application.StartPreparingOrder(ctx, uow, order.ID()); err != nil {
+	if _, err := application.StartPreparingOrder(ctx, uow, order.ID(), "user-1"); err != nil {
 		t.Fatalf("StartPreparingOrder: %v", err)
 	}
-	if _, err := application.MarkOrderReady(ctx, uow, order.ID()); err != nil {
+	if _, err := application.MarkOrderReady(ctx, uow, order.ID(), "user-1"); err != nil {
 		t.Fatalf("MarkOrderReady: %v", err)
 	}
-	got, err := application.MarkOrderDelivered(ctx, uow, order.ID())
+	got, err := application.MarkOrderDelivered(ctx, uow, order.ID(), "user-1")
 	if err != nil {
 		t.Fatalf("MarkOrderDelivered: %v", err)
 	}
 	if got.Status() != domain.OrderStatusEntregue {
 		t.Errorf("Status() = %q, want %q", got.Status(), domain.OrderStatusEntregue)
+	}
+	if snapshot := uow.snapshot(); len(snapshot.auditEntries) != 4 {
+		t.Errorf("audit entries = %d, want 4 (one per transition)", len(snapshot.auditEntries))
 	}
 }
 
@@ -124,7 +141,7 @@ func TestCancelOrder_FromPendente_Succeeds(t *testing.T) {
 	state.orders[order.ID()] = order
 	uow := newFakeUnitOfWork(state)
 
-	got, err := application.CancelOrder(context.Background(), uow, order.ID())
+	got, err := application.CancelOrder(context.Background(), uow, order.ID(), "user-1")
 	if err != nil {
 		t.Fatalf("CancelOrder: unexpected error: %v", err)
 	}

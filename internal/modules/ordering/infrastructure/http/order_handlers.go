@@ -5,6 +5,7 @@ import (
 
 	"github.com/manuellysuzik/mesaposta-api/internal/modules/ordering/application"
 	"github.com/manuellysuzik/mesaposta-api/internal/modules/ordering/domain"
+	"github.com/manuellysuzik/mesaposta-api/internal/platform/auth"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/httpx"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/tenant"
 )
@@ -99,7 +100,7 @@ func orderTransitionHandler(transition func(r *http.Request, id domain.ID) (doma
 // confirmOrderHandler returns a handler for POST /pedidos/{id}/confirmar.
 func confirmOrderHandler(uow domain.UnitOfWork) http.HandlerFunc {
 	return orderTransitionHandler(func(r *http.Request, id domain.ID) (domain.Order, error) {
-		return application.ConfirmOrder(r.Context(), uow, id)
+		return application.ConfirmOrder(r.Context(), uow, id, auth.ActorIDFrom(r.Context()))
 	})
 }
 
@@ -107,14 +108,14 @@ func confirmOrderHandler(uow domain.UnitOfWork) http.HandlerFunc {
 // POST /pedidos/{id}/preparar.
 func startPreparingOrderHandler(uow domain.UnitOfWork) http.HandlerFunc {
 	return orderTransitionHandler(func(r *http.Request, id domain.ID) (domain.Order, error) {
-		return application.StartPreparingOrder(r.Context(), uow, id)
+		return application.StartPreparingOrder(r.Context(), uow, id, auth.ActorIDFrom(r.Context()))
 	})
 }
 
 // markOrderReadyHandler returns a handler for POST /pedidos/{id}/pronto.
 func markOrderReadyHandler(uow domain.UnitOfWork) http.HandlerFunc {
 	return orderTransitionHandler(func(r *http.Request, id domain.ID) (domain.Order, error) {
-		return application.MarkOrderReady(r.Context(), uow, id)
+		return application.MarkOrderReady(r.Context(), uow, id, auth.ActorIDFrom(r.Context()))
 	})
 }
 
@@ -122,13 +123,13 @@ func markOrderReadyHandler(uow domain.UnitOfWork) http.HandlerFunc {
 // POST /pedidos/{id}/entregar.
 func markOrderDeliveredHandler(uow domain.UnitOfWork) http.HandlerFunc {
 	return orderTransitionHandler(func(r *http.Request, id domain.ID) (domain.Order, error) {
-		return application.MarkOrderDelivered(r.Context(), uow, id)
+		return application.MarkOrderDelivered(r.Context(), uow, id, auth.ActorIDFrom(r.Context()))
 	})
 }
 
 // cancelOrderHandler returns a handler for POST /pedidos/{id}/cancelar.
 func cancelOrderHandler(uow domain.UnitOfWork) http.HandlerFunc {
 	return orderTransitionHandler(func(r *http.Request, id domain.ID) (domain.Order, error) {
-		return application.CancelOrder(r.Context(), uow, id)
+		return application.CancelOrder(r.Context(), uow, id, auth.ActorIDFrom(r.Context()))
 	})
 }
