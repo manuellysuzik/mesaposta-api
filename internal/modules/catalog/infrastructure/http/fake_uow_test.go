@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/manuellysuzik/mesaposta-api/internal/modules/catalog/domain"
+	"github.com/manuellysuzik/mesaposta-api/internal/platform/audit"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/errs"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/outbox"
 )
@@ -19,9 +20,10 @@ import (
 // package.
 
 type fakeState struct {
-	products map[domain.ID]*domain.Product
-	recipes  map[domain.ID]*domain.Recipe
-	events   []outbox.DomainEvent
+	products     map[domain.ID]*domain.Product
+	recipes      map[domain.ID]*domain.Recipe
+	events       []outbox.DomainEvent
+	auditEntries []audit.Entry
 }
 
 func newFakeState() *fakeState {
@@ -33,9 +35,10 @@ func newFakeState() *fakeState {
 
 func (s *fakeState) clone() *fakeState {
 	clone := &fakeState{
-		products: make(map[domain.ID]*domain.Product, len(s.products)),
-		recipes:  make(map[domain.ID]*domain.Recipe, len(s.recipes)),
-		events:   append([]outbox.DomainEvent{}, s.events...),
+		products:     make(map[domain.ID]*domain.Product, len(s.products)),
+		recipes:      make(map[domain.ID]*domain.Recipe, len(s.recipes)),
+		events:       append([]outbox.DomainEvent{}, s.events...),
+		auditEntries: append([]audit.Entry{}, s.auditEntries...),
 	}
 	for id, p := range s.products {
 		pc := *p
@@ -100,6 +103,10 @@ func (r *fakeRepositories) Events() outbox.DomainEventPublisher {
 	return &fakeEventPublisher{state: r.state}
 }
 
+func (r *fakeRepositories) Audit() audit.Recorder {
+	return &fakeAuditRecorder{state: r.state}
+}
+
 type fakeProductRepository struct {
 	state *fakeState
 }
@@ -162,5 +169,16 @@ var _ outbox.DomainEventPublisher = (*fakeEventPublisher)(nil)
 
 func (p *fakeEventPublisher) Publish(_ context.Context, events ...outbox.DomainEvent) error {
 	p.state.events = append(p.state.events, events...)
+	return nil
+}
+
+type fakeAuditRecorder struct {
+	state *fakeState
+}
+
+var _ audit.Recorder = (*fakeAuditRecorder)(nil)
+
+func (a *fakeAuditRecorder) Record(_ context.Context, entries ...audit.Entry) error {
+	a.state.auditEntries = append(a.state.auditEntries, entries...)
 	return nil
 }

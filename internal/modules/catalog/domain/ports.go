@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 
+	"github.com/manuellysuzik/mesaposta-api/internal/platform/audit"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/outbox"
 )
 
@@ -32,6 +33,12 @@ type Repositories interface {
 	Products() ProductRepository
 	Recipes() RecipeRepository
 	Events() outbox.DomainEventPublisher
+	// Audit returns the audit.Recorder bound to this unit of work, for the
+	// same reason Events does: an audit entry is a side effect that must
+	// commit atomically WITH the mutation it describes. Mirrors
+	// internal/modules/operations/domain.Repositories.Audit() exactly --
+	// see that method's own doc comment for the full rationale.
+	Audit() audit.Recorder
 }
 
 // ProductRepository is the persistence port for the Product aggregate.

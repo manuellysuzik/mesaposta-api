@@ -3,6 +3,7 @@ package application_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/manuellysuzik/mesaposta-api/internal/modules/catalog/application"
 	"github.com/manuellysuzik/mesaposta-api/internal/modules/catalog/domain"
@@ -15,12 +16,13 @@ func TestApplyDiscount_Valid_UpdatesProductAndPublishesEvent(t *testing.T) {
 	state := newFakeState()
 	state.products[product.ID()] = product
 	uow := newFakeUnitOfWork(state)
+	now := time.Now().UTC()
 
 	// Act
 	updated, err := application.ApplyDiscount(context.Background(), uow, application.ApplyDiscountInput{
 		ProductID: product.ID(),
 		Discount:  mustFakeDiscountPercent(t, 2500), // 25%
-	})
+	}, now, "user-1")
 
 	// Assert
 	if err != nil {
@@ -37,6 +39,19 @@ func TestApplyDiscount_Valid_UpdatesProductAndPublishesEvent(t *testing.T) {
 	if len(snapshot.events) != 1 {
 		t.Fatalf("events published = %d, want 1", len(snapshot.events))
 	}
+	if len(snapshot.auditEntries) != 1 {
+		t.Fatalf("audit entries recorded = %d, want 1", len(snapshot.auditEntries))
+	}
+	entry := snapshot.auditEntries[0]
+	if entry.ActorID != "user-1" {
+		t.Errorf("entry.ActorID = %q, want %q", entry.ActorID, "user-1")
+	}
+	if entry.Action != "product.discount_applied" {
+		t.Errorf("entry.Action = %q, want %q", entry.Action, "product.discount_applied")
+	}
+	if entry.EntityID != product.ID().String() {
+		t.Errorf("entry.EntityID = %q, want %q", entry.EntityID, product.ID().String())
+	}
 }
 
 func TestApplyDiscount_ProductNotFound_ReturnsNotFoundError(t *testing.T) {
@@ -47,7 +62,7 @@ func TestApplyDiscount_ProductNotFound_ReturnsNotFoundError(t *testing.T) {
 	_, err := application.ApplyDiscount(context.Background(), uow, application.ApplyDiscountInput{
 		ProductID: domain.NewID(),
 		Discount:  mustFakeDiscountPercent(t, 1000),
-	})
+	}, time.Now().UTC(), "")
 
 	// Assert
 	if !errs.IsKind(err, errs.NotFound) {
@@ -69,7 +84,7 @@ func TestApplyDiscount_WouldZeroOutPrice_LeavesPersistedStateUntouched(t *testin
 	_, err := application.ApplyDiscount(context.Background(), uow, application.ApplyDiscountInput{
 		ProductID: product.ID(),
 		Discount:  mustFakeDiscountPercent(t, 10000), // 100%
-	})
+	}, time.Now().UTC(), "user-1")
 
 	// Assert
 	if !errs.IsKind(err, errs.Invalid) {
@@ -79,6 +94,9 @@ func TestApplyDiscount_WouldZeroOutPrice_LeavesPersistedStateUntouched(t *testin
 	persisted := snapshot.products[product.ID()]
 	if persisted.Version() != 1 {
 		t.Errorf("persisted.Version() = %d after rejected discount, want unchanged 1", persisted.Version())
+	}
+	if len(snapshot.auditEntries) != 0 {
+		t.Errorf("audit entries = %v after rejected discount, want none: the invariant fails BEFORE any write is attempted", snapshot.auditEntries)
 	}
 	if persisted.Discount() != nil {
 		t.Errorf("persisted.Discount() = %v after rejected discount, want nil", persisted.Discount())

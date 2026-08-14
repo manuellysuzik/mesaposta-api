@@ -2,9 +2,11 @@ package http
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/manuellysuzik/mesaposta-api/internal/modules/catalog/application"
 	"github.com/manuellysuzik/mesaposta-api/internal/modules/catalog/domain"
+	"github.com/manuellysuzik/mesaposta-api/internal/platform/auth"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/httpx"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/tenant"
 )
@@ -136,7 +138,7 @@ func applyDiscountHandler(uow domain.UnitOfWork) http.HandlerFunc {
 		product, err := application.ApplyDiscount(r.Context(), uow, application.ApplyDiscountInput{
 			ProductID: id,
 			Discount:  discount,
-		})
+		}, time.Now().UTC(), auth.ActorIDFrom(r.Context()))
 		if err != nil {
 			httpx.RespondError(w, r, err)
 			return

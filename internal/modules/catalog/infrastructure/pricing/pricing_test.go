@@ -7,6 +7,7 @@ import (
 
 	"github.com/manuellysuzik/mesaposta-api/internal/modules/catalog/domain"
 	"github.com/manuellysuzik/mesaposta-api/internal/modules/catalog/infrastructure/pricing"
+	"github.com/manuellysuzik/mesaposta-api/internal/platform/audit"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/errs"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/outbox"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/tenant"
@@ -61,6 +62,7 @@ func (r *fakeRepositories) Products() domain.ProductRepository {
 }
 func (r *fakeRepositories) Recipes() domain.RecipeRepository    { return nil }
 func (r *fakeRepositories) Events() outbox.DomainEventPublisher { return nil }
+func (r *fakeRepositories) Audit() audit.Recorder               { return nil }
 
 type fakeProductRepository struct {
 	products map[domain.ID]*domain.Product

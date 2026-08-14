@@ -2,10 +2,22 @@ package application
 
 import (
 	"context"
+	"time"
 
 	"github.com/manuellysuzik/mesaposta-api/internal/modules/catalog/contracts"
 	"github.com/manuellysuzik/mesaposta-api/internal/modules/catalog/domain"
+	"github.com/manuellysuzik/mesaposta-api/internal/platform/audit"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/outbox"
+)
+
+// Audit action/entity identifiers this use case records. Constants rather
+// than inline literals for the same reason
+// internal/modules/operations/application.ReceivePurchaseOrder's own
+// audit constants are: the value of an audit trail depends on these
+// identifiers being STABLE across time.
+const (
+	auditActionProductDiscountApplied = "product.discount_applied"
+	auditEntityProduct                = "product"
 )
 
 // ApplyDiscountInput carries everything ApplyDiscount needs to apply a
@@ -28,7 +40,15 @@ type ApplyDiscountInput struct {
 // application layer, mirroring
 // internal/modules/operations/application.RegisterStockMovement's own
 // "saida" branch for the identical shape of invariant.
-func ApplyDiscount(ctx context.Context, uow domain.UnitOfWork, input ApplyDiscountInput) (domain.Product, error) {
+//
+// now and actorID feed the audit trail exactly as
+// internal/modules/operations/application.ReceivePurchaseOrder's own now
+// and actorID parameters do: now is when the discount was applied,
+// actorID is a best-effort ("" when unknown, never a placeholder)
+// identifier of who applied it, sourced by the HTTP layer from the
+// authenticated access token's "sub" claim (see
+// internal/platform/auth.ActorIDFrom). See docs/adr/0006-audit-log.md.
+func ApplyDiscount(ctx context.Context, uow domain.UnitOfWork, input ApplyDiscountInput, now time.Time, actorID string) (domain.Product, error) {
 	var updated domain.Product
 
 	err := uow.Do(ctx, func(ctx context.Context, r domain.Repositories) error {
@@ -37,6 +57,11 @@ func ApplyDiscount(ctx context.Context, uow domain.UnitOfWork, input ApplyDiscou
 			return err
 		}
 		expectedVersion := product.Version()
+		// Snapshot BEFORE product.ApplyDiscount mutates it in place -- see
+		// operations.ReceivePurchaseOrder's identical snapshot-before-mutate
+		// comment for why: reading these after the mutation would record a
+		// "before" identical to the "after".
+		priceBeforeDiscount := product.CurrentPrice()
 
 		if err := product.ApplyDiscount(input.Discount); err != nil {
 			return err
@@ -51,6 +76,33 @@ func ApplyDiscount(ctx context.Context, uow domain.UnitOfWork, input ApplyDiscou
 			return err
 		}
 		if err := r.Events().Publish(ctx, event); err != nil {
+			return err
+		}
+
+		// The audit entry goes last, after every other write, on the same
+		// principle operations.ReceivePurchaseOrder's own audit write
+		// follows: because it runs inside this same Do call (the same
+		// transaction), a failure anywhere -- including here -- rolls back
+		// the discount AND its trail together.
+		entry, err := audit.NewEntry(
+			product.TenantID(),
+			actorID,
+			auditActionProductDiscountApplied,
+			auditEntityProduct,
+			product.ID().String(),
+			now,
+			map[string]any{
+				"price_cents": priceBeforeDiscount.Cents(),
+			},
+			map[string]any{
+				"price_cents":      product.CurrentPrice().Cents(),
+				"discount_percent": hundredthsToPercent(*product.Discount()),
+			},
+		)
+		if err != nil {
+			return err
+		}
+		if err := r.Audit().Record(ctx, entry); err != nil {
 			return err
 		}
 

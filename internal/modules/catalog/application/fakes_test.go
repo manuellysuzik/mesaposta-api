@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/manuellysuzik/mesaposta-api/internal/modules/catalog/domain"
+	"github.com/manuellysuzik/mesaposta-api/internal/platform/audit"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/errs"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/outbox"
 )
@@ -30,9 +31,10 @@ import (
 
 // fakeState is the mutable data a fakeUnitOfWork operates over.
 type fakeState struct {
-	products map[domain.ID]*domain.Product
-	recipes  map[domain.ID]*domain.Recipe
-	events   []outbox.DomainEvent
+	products     map[domain.ID]*domain.Product
+	recipes      map[domain.ID]*domain.Recipe
+	events       []outbox.DomainEvent
+	auditEntries []audit.Entry
 }
 
 // newFakeState returns an empty, ready-to-use fakeState.
@@ -49,9 +51,10 @@ func newFakeState() *fakeState {
 // ultimately rolled back -- can never reach back into s itself.
 func (s *fakeState) clone() *fakeState {
 	clone := &fakeState{
-		products: make(map[domain.ID]*domain.Product, len(s.products)),
-		recipes:  make(map[domain.ID]*domain.Recipe, len(s.recipes)),
-		events:   append([]outbox.DomainEvent{}, s.events...),
+		products:     make(map[domain.ID]*domain.Product, len(s.products)),
+		recipes:      make(map[domain.ID]*domain.Recipe, len(s.recipes)),
+		events:       append([]outbox.DomainEvent{}, s.events...),
+		auditEntries: append([]audit.Entry{}, s.auditEntries...),
 	}
 	for id, product := range s.products {
 		productCopy := *product
@@ -75,6 +78,7 @@ type fakeRepoErrors struct {
 	recipeFindByID           error
 	recipeInsert             error
 	eventsPublish            error
+	auditRecord              error
 }
 
 // fakeUnitOfWork is an in-memory domain.UnitOfWork. Its zero value is not
@@ -145,6 +149,10 @@ func (r *fakeRepositories) Recipes() domain.RecipeRepository {
 
 func (r *fakeRepositories) Events() outbox.DomainEventPublisher {
 	return &fakeEventPublisher{uow: r.uow, state: r.state}
+}
+
+func (r *fakeRepositories) Audit() audit.Recorder {
+	return &fakeAuditRecorder{uow: r.uow, state: r.state}
 }
 
 // --- ProductRepository -------------------------------------------------
@@ -242,6 +250,31 @@ func (p *fakeEventPublisher) Publish(_ context.Context, events ...outbox.DomainE
 		return err
 	}
 	p.state.events = append(p.state.events, events...)
+	return nil
+}
+
+// --- audit.Recorder -----------------------------------------------------
+
+// fakeAuditRecorder accumulates recorded entries into the same fakeState
+// clone every other repository writes through, so an entry recorded inside
+// a Do call that ultimately rolls back is discarded along with every other
+// write in that call -- the in-memory equivalent of the atomicity the real
+// Postgres adapter gets from sharing a db.Scope.
+type fakeAuditRecorder struct {
+	uow   *fakeUnitOfWork
+	state *fakeState
+}
+
+var _ audit.Recorder = (*fakeAuditRecorder)(nil)
+
+func (a *fakeAuditRecorder) Record(_ context.Context, entries ...audit.Entry) error {
+	if len(entries) == 0 {
+		return nil
+	}
+	if err := a.uow.errors.auditRecord; err != nil {
+		return err
+	}
+	a.state.auditEntries = append(a.state.auditEntries, entries...)
 	return nil
 }
 
