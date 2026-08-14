@@ -49,6 +49,38 @@ func ClaimsFromContext(ctx context.Context) (claims token.Claims, ok bool) {
 	return claims, ok
 }
 
+// ActorIDFrom extracts the best available identifier for "who is making
+// this request", for callers recording an audit trail (see
+// internal/platform/audit.Entry.ActorID): the authenticated access token's
+// "sub" claim, as attached to ctx by Authenticate.
+//
+// It returns the empty string -- never an error, never a placeholder --
+// when ctx carries no claims. This is deliberate on two counts. First, an
+// audit trail must never be able to BLOCK the operation it observes:
+// failing a legitimate mutation because the actor could not be identified
+// trades a real business outcome for a bookkeeping detail. Second, an
+// empty actor is persisted as SQL NULL (see
+// internal/platform/audit.Entry.ActorID), so "we could not identify the
+// actor" stays distinguishable from every real actor id instead of being
+// papered over with something like "unknown".
+//
+// This is explicitly a best-effort mechanism, and the honest ceiling of
+// what this system can currently know: there is no identity module, so
+// "sub" is an opaque token subject, not a foreign key into any users
+// table. See docs/adr/0006-audit-log.md. Contrast with a module's own,
+// stricter "who is the authenticated user for THIS domain action" helper
+// (e.g. internal/modules/community/infrastructure/http.currentUserID),
+// which legitimately DOES fail the request on a missing/malformed
+// subject -- that is a business-logic identity requirement, not an
+// audit-trail best-effort one, and the two must not be conflated.
+func ActorIDFrom(ctx context.Context) string {
+	claims, ok := ClaimsFromContext(ctx)
+	if !ok {
+		return ""
+	}
+	return claims.Subject
+}
+
 // unauthenticated builds the single, uniform *errs.Error every Authenticate
 // failure is reported as -- mirroring token.Verifier.Verify's own
 // unauthenticated() helper: collapsing every failure mode (missing header,

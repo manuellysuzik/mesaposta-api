@@ -329,3 +329,35 @@ func TestAuthenticate_NeverLogsRawToken(t *testing.T) {
 		t.Fatalf("log output is not valid JSON lines: %v (%s)", err, logOutput)
 	}
 }
+
+func TestActorIDFrom_NoClaims_ReturnsEmptyString(t *testing.T) {
+	if got := auth.ActorIDFrom(context.Background()); got != "" {
+		t.Errorf("ActorIDFrom(no claims) = %q, want \"\" (best-effort: never a placeholder)", got)
+	}
+}
+
+func TestActorIDFrom_AuthenticatedRequest_ReturnsTokenSubject(t *testing.T) {
+	issuer, verifier := newTestTokenPair(t)
+	signed, err := issuer.Issue("user-42", tenantAUUID, token.RoleGestor, "session-1")
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+
+	var got string
+	handler := auth.Authenticate(verifier)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = auth.ActorIDFrom(r.Context())
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer "+signed)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if got != "user-42" {
+		t.Errorf("ActorIDFrom = %q, want the token's \"sub\" claim %q", got, "user-42")
+	}
+}

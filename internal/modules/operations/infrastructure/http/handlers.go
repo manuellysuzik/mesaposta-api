@@ -11,33 +11,6 @@ import (
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/tenant"
 )
 
-// actorIDFrom extracts the best available identifier for "who is making
-// this request", for the audit trail: the authenticated access token's
-// "sub" claim, as attached to the request context by
-// internal/platform/auth.Authenticate.
-//
-// It returns the empty string -- never an error, never a placeholder --
-// when the context carries no claims. This is deliberate on two counts.
-// First, an audit trail must never be able to BLOCK the operation it
-// observes: failing a legitimate purchase-order receipt because the actor
-// could not be identified trades a real business outcome for a
-// bookkeeping detail. Second, an empty actor is persisted as SQL NULL
-// (see internal/platform/audit.Entry.ActorID), so "we could not identify
-// the actor" stays distinguishable from every real actor id instead of
-// being papered over with something like "unknown".
-//
-// This is explicitly a best-effort mechanism, and the honest ceiling of
-// what this system can currently know: there is no identity module, so
-// "sub" is an opaque token subject, not a foreign key into any users
-// table. See docs/adr/0006-audit-log.md.
-func actorIDFrom(r *http.Request) string {
-	claims, ok := auth.ClaimsFromContext(r.Context())
-	if !ok {
-		return ""
-	}
-	return claims.Subject
-}
-
 func getPurchaseOrderHandler(uow domain.UnitOfWork) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if _, err := tenant.From(r.Context()); err != nil {
@@ -236,7 +209,7 @@ func receivePurchaseOrderHandler(uow domain.UnitOfWork) http.HandlerFunc {
 			httpx.RespondError(w, r, err)
 			return
 		}
-		if err := application.ReceivePurchaseOrder(r.Context(), uow, id, time.Now().UTC(), actorIDFrom(r)); err != nil {
+		if err := application.ReceivePurchaseOrder(r.Context(), uow, id, time.Now().UTC(), auth.ActorIDFrom(r.Context())); err != nil {
 			httpx.RespondError(w, r, err)
 			return
 		}
