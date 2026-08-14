@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/httpx"
 )
 
@@ -216,6 +218,63 @@ func TestRequestLogger_HandlesMissingUpstreamRequestID(t *testing.T) {
 
 	if got := rec.Header().Get("X-Request-ID"); got != "" {
 		t.Fatalf("X-Request-ID header = %q, want empty (no upstream request id middleware ran)", got)
+	}
+}
+
+func TestRequestLogger_IncludesTraceCorrelationWhenSpanActive(t *testing.T) {
+	var buf bytes.Buffer
+	handler := httpx.RequestLogger(testLogger(&buf))(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+	}))
+
+	traceID, err := trace.TraceIDFromHex("0102030405060708090a0b0c0d0e0f10")
+	if err != nil {
+		t.Fatalf("TraceIDFromHex: %v", err)
+	}
+	spanID, err := trace.SpanIDFromHex("0102030405060708")
+	if err != nil {
+		t.Fatalf("SpanIDFromHex: %v", err)
+	}
+	sc := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    traceID,
+		SpanID:     spanID,
+		TraceFlags: trace.FlagsSampled,
+	})
+	req := httptest.NewRequest("GET", "/traced", nil).WithContext(trace.ContextWithSpanContext(context.Background(), sc))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	var logged map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &logged); err != nil {
+		t.Fatalf("log line is not valid JSON: %v (%s)", err, buf.String())
+	}
+	if got := logged["trace_id"]; got != traceID.String() {
+		t.Errorf("trace_id = %v, want %q", got, traceID.String())
+	}
+	if got := logged["span_id"]; got != spanID.String() {
+		t.Errorf("span_id = %v, want %q", got, spanID.String())
+	}
+}
+
+func TestRequestLogger_OmitsTraceFieldsWhenNoActiveSpan(t *testing.T) {
+	var buf bytes.Buffer
+	handler := httpx.RequestLogger(testLogger(&buf))(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+	}))
+
+	req := httptest.NewRequest("GET", "/untraced", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	var logged map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &logged); err != nil {
+		t.Fatalf("log line is not valid JSON: %v (%s)", err, buf.String())
+	}
+	if _, ok := logged["trace_id"]; ok {
+		t.Errorf("trace_id present in log with no active span: %v (want omitted entirely, not a zero-value id)", logged["trace_id"])
+	}
+	if _, ok := logged["span_id"]; ok {
+		t.Errorf("span_id present in log with no active span: %v (want omitted entirely, not a zero-value id)", logged["span_id"])
 	}
 }
 
