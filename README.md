@@ -172,7 +172,7 @@ para p50/p95/p99).
 docker compose up --build
 ```
 
-- **Grafana** — <http://localhost:3000> (acesso anônimo, sem login) — abre
+- **Grafana** — <http://localhost:3001> (acesso anônimo, sem login) — abre
   direto no dashboard `mesaposta-api` (provisionado automaticamente via
   [`deploy/grafana/`](deploy/grafana)), com latência p50/p95/p99 por rota,
   taxa de erro 5xx e saturação do pool de conexões Postgres.
@@ -217,7 +217,7 @@ introduzida no código do repositório (não só nas fixtures de teste):
 
    ```bash
    go test -count=1 ./architecture/...
-   # ok  	github.com/manuellysuzik/mesaposta-api/architecture
+   # ok   github.com/manuellysuzik/mesaposta-api/architecture
    ```
 
 2. Crie um pacote de domínio fake importando `net/http` diretamente:
@@ -253,7 +253,7 @@ introduzida no código do repositório (não só nas fixtures de teste):
 
    ```bash
    go test -count=1 ./architecture/...
-   # ok  	github.com/manuellysuzik/mesaposta-api/architecture
+   # ok   github.com/manuellysuzik/mesaposta-api/architecture
    ```
 
 O pacote `tenant_test_demo` criado nos passos 2–3 é só para demonstração e

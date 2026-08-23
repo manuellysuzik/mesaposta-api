@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
 
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/auth"
 	"github.com/manuellysuzik/mesaposta-api/internal/platform/auth/publictenant"
@@ -37,6 +38,7 @@ import (
 	communitypg "github.com/manuellysuzik/mesaposta-api/internal/modules/community/infrastructure/postgres"
 	crmhttp "github.com/manuellysuzik/mesaposta-api/internal/modules/crm/infrastructure/http"
 	crmpg "github.com/manuellysuzik/mesaposta-api/internal/modules/crm/infrastructure/postgres"
+	identityhttp "github.com/manuellysuzik/mesaposta-api/internal/modules/identity/infrastructure/http"
 	operationshttp "github.com/manuellysuzik/mesaposta-api/internal/modules/operations/infrastructure/http"
 	operationspg "github.com/manuellysuzik/mesaposta-api/internal/modules/operations/infrastructure/postgres"
 	orderinghttp "github.com/manuellysuzik/mesaposta-api/internal/modules/ordering/infrastructure/http"
@@ -129,14 +131,21 @@ func BuildIssuer(cfg config.Config) (*token.Issuer, error) {
 // would be the more complete fix, left for a later phase if/when this
 // service ever needs to construct/tear down more than one *http.Handler
 // per process.
-func NewApp(cfg config.Config, pool *db.Pool, logger *slog.Logger, verifier *token.Verifier, metricsHandler http.Handler) http.Handler {
-	_ = cfg // reserved for future per-environment wiring; validated by the caller (config.Load).
-
+func NewApp(cfg config.Config, pool *db.Pool, logger *slog.Logger, verifier *token.Verifier, issuer *token.Issuer, metricsHandler http.Handler) http.Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
 	router := httpx.NewRouter(logger, readinessCheck(pool), httpx.DefaultRequestTimeout, metricsHandler)
+
+	// /v1/auth is deliberately OUTSIDE the /v1 group below (which carries
+	// auth.Authenticate) -- a login attempt has no token yet. See
+	// identityhttp.Mount's own doc comment.
+	if pool != nil {
+		router.Route("/v1/auth", func(r chi.Router) {
+			identityhttp.Mount(r, pool, issuer)
+		})
+	}
 
 	router.Route("/v1/_probe", func(r chi.Router) {
 		r.Use(auth.Authenticate(verifier))
@@ -169,7 +178,20 @@ func NewApp(cfg config.Config, pool *db.Pool, logger *slog.Logger, verifier *tok
 		mountOrderingPublicRoutes(router, pool)
 	}
 
-	return router
+	// Wraps the fully-assembled router, rather than router.Use(...) at the
+	// top: httpx.NewRouter already registers /healthz, /readyz and /metrics
+	// before returning, and chi panics if Use is called after any route has
+	// been registered. Wrapping the final http.Handler sidesteps that
+	// entirely and applies CORS uniformly to every route above, public and
+	// authenticated alike.
+	corsMiddleware := cors.Handler(cors.Options{
+		AllowedOrigins:   cfg.CORSAllowedOrigins,
+		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type"},
+		AllowCredentials: false,
+		MaxAge:           300,
+	})
+	return corsMiddleware(router)
 }
 
 // mountOrderingPublicRoutes wires internal/modules/ordering's PUBLIC,

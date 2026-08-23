@@ -208,10 +208,22 @@ func validateEndpoint(endpoint string) error {
 // exchange for not having to provision and rotate a TLS cert for
 // telemetry's internal hop.
 func setupTracing(ctx context.Context, cfg Config, res *resource.Resource) (*sdktrace.TracerProvider, error) {
-	exporter, err := otlptracehttp.New(ctx,
+	opts := []otlptracehttp.Option{
 		otlptracehttp.WithEndpointURL(cfg.OTLPEndpoint),
 		otlptracehttp.WithInsecure(),
-	)
+	}
+	// WithEndpointURL takes cfg.OTLPEndpoint's path literally -- falling
+	// back to "/" rather than the OTLP-spec default "/v1/traces" -- when it
+	// has none, unlike WithEndpoint. A bare "http://host:port" endpoint
+	// (e.g. this service's own default, pointing at Jaeger's OTLP/HTTP
+	// receiver) therefore needs the traces path appended explicitly, or
+	// every export 404s against the collector's root path instead of
+	// reaching its receiver.
+	if u, err := url.Parse(cfg.OTLPEndpoint); err == nil && (u.Path == "" || u.Path == "/") {
+		opts = append(opts, otlptracehttp.WithURLPath("/v1/traces"))
+	}
+
+	exporter, err := otlptracehttp.New(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("observability: building OTLP trace exporter: %w", err)
 	}

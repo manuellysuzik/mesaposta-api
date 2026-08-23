@@ -251,6 +251,38 @@ func TestConfig_String_RedactsSecrets(t *testing.T) {
 	}
 }
 
+func TestLoadFrom_CORSAllowedOrigins_Default(t *testing.T) {
+	cfg, err := config.LoadFrom(envMap(validBaseEnv()))
+	if err != nil {
+		t.Fatalf("LoadFrom: unexpected error: %v", err)
+	}
+
+	want := []string{"http://localhost:3000"}
+	if len(cfg.CORSAllowedOrigins) != len(want) || cfg.CORSAllowedOrigins[0] != want[0] {
+		t.Errorf("cfg.CORSAllowedOrigins = %v, want %v", cfg.CORSAllowedOrigins, want)
+	}
+}
+
+func TestLoadFrom_CORSAllowedOrigins_ExplicitOverride(t *testing.T) {
+	env := validBaseEnv()
+	env["CORS_ALLOWED_ORIGINS"] = "https://app.mesaposta.com, https://staging.mesaposta.com ,,"
+
+	cfg, err := config.LoadFrom(envMap(env))
+	if err != nil {
+		t.Fatalf("LoadFrom: unexpected error: %v", err)
+	}
+
+	want := []string{"https://app.mesaposta.com", "https://staging.mesaposta.com"}
+	if len(cfg.CORSAllowedOrigins) != len(want) {
+		t.Fatalf("cfg.CORSAllowedOrigins = %v, want %v", cfg.CORSAllowedOrigins, want)
+	}
+	for i, origin := range want {
+		if cfg.CORSAllowedOrigins[i] != origin {
+			t.Errorf("cfg.CORSAllowedOrigins[%d] = %q, want %q", i, cfg.CORSAllowedOrigins[i], origin)
+		}
+	}
+}
+
 func TestLoad_ReadsFromOSEnv(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://user:pw@localhost:5432/mesaposta")
 	t.Setenv("JWT_SECRET", strings.Repeat("b", 40))

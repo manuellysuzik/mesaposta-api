@@ -24,6 +24,9 @@ coverage.txt
 *.swp
 *.swo
 
+# Claude Code local session/tooling state
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db

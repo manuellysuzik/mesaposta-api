@@ -159,7 +159,13 @@ func run(ctx context.Context, getenv func(string) string, stderr, stdout io.Writ
 		return 1
 	}
 
-	handler := app.NewApp(*cfg, pool, logger, verifier, obsHandle.MetricsHandler)
+	issuer, err := app.BuildIssuer(*cfg)
+	if err != nil {
+		fmt.Fprintln(stderr, "mesaposta-api: building token issuer:", err)
+		return 1
+	}
+
+	handler := app.NewApp(*cfg, pool, logger, verifier, issuer, obsHandle.MetricsHandler)
 	srv := httpx.NewServer(httpx.ServerConfig{
 		Addr:    ":" + cfg.Port,
 		Handler: handler,

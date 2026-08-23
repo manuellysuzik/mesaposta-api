@@ -48,6 +48,9 @@ const (
 	// only safe default (in particular so `go test ./...` never depends on
 	// a collector being reachable).
 	defaultOTELExporterOTLPEndpoint = ""
+	// defaultCORSAllowedOrigins matches the frontend's local dev server
+	// (Next.js default port).
+	defaultCORSAllowedOrigins = "http://localhost:3000"
 )
 
 // Config is mesaposta-api's fully validated runtime configuration.
@@ -93,6 +96,11 @@ type Config struct {
 	// internal/platform/observability's package doc comment for why that
 	// is the only safe default.
 	OTELExporterOTLPEndpoint string
+
+	// CORSAllowedOrigins lists the origins allowed to make cross-origin
+	// requests (e.g. the frontend's dev server). Defaults to
+	// ["http://localhost:3000"].
+	CORSAllowedOrigins []string
 }
 
 // redacted is what Config.String prints in place of any secret value.
@@ -106,10 +114,10 @@ func (c Config) String() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Config{AppEnv:%s Port:%s DatabaseURL:%s JWTSecret:%s "+
 		"DBMaxConns:%d DBMinConns:%d DBMaxConnLifetime:%s DBMaxConnIdleTime:%s DBConnectTimeout:%s "+
-		"OTELServiceName:%s OTELExporterOTLPEndpoint:%s}",
+		"OTELServiceName:%s OTELExporterOTLPEndpoint:%s CORSAllowedOrigins:%s}",
 		c.AppEnv, c.Port, redacted, redacted,
 		c.DBMaxConns, c.DBMinConns, c.DBMaxConnLifetime, c.DBMaxConnIdleTime, c.DBConnectTimeout,
-		c.OTELServiceName, c.OTELExporterOTLPEndpoint)
+		c.OTELServiceName, c.OTELExporterOTLPEndpoint, c.CORSAllowedOrigins)
 	return b.String()
 }
 
@@ -186,6 +194,23 @@ func durationWithDefault(getenv getenvFunc, v *validator, key, def string) time.
 	return d
 }
 
+// sliceWithDefault reads key via getenv as a comma-separated list, falling
+// back to def when unset. Entries are trimmed of surrounding whitespace and
+// empty entries are dropped (so a trailing comma or accidental double comma
+// does not produce a blank origin).
+func sliceWithDefault(getenv getenvFunc, key, def string) []string {
+	raw := stringWithDefault(getenv, key, def)
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // LoadFrom builds a Config by reading every variable via getenv, validating
 // as it goes, and returns every problem found (if any) as a single error.
 func LoadFrom(getenv getenvFunc) (*Config, error) {
@@ -205,6 +230,8 @@ func LoadFrom(getenv getenvFunc) (*Config, error) {
 
 		OTELServiceName:          stringWithDefault(getenv, "OTEL_SERVICE_NAME", defaultOTELServiceName),
 		OTELExporterOTLPEndpoint: stringWithDefault(getenv, "OTEL_EXPORTER_OTLP_ENDPOINT", defaultOTELExporterOTLPEndpoint),
+
+		CORSAllowedOrigins: sliceWithDefault(getenv, "CORS_ALLOWED_ORIGINS", defaultCORSAllowedOrigins),
 	}
 
 	if cfg.JWTSecret != "" && len(cfg.JWTSecret) < minJWTSecretBytes {
