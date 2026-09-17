@@ -21,8 +21,9 @@ func envMap(m map[string]string) func(string) string {
 // override/remove exactly what they want to exercise.
 func validBaseEnv() map[string]string {
 	return map[string]string{
-		"DATABASE_URL": "postgres://user:supersecret@localhost:5432/mesaposta?sslmode=disable",
-		"JWT_SECRET":   "this-is-a-perfectly-fine-32-byte-plus-secret-value",
+		"DATABASE_URL":         "postgres://user:supersecret@localhost:5432/mesaposta?sslmode=disable",
+		"JWT_SECRET":           "this-is-a-perfectly-fine-32-byte-plus-secret-value",
+		"PLATFORM_ADMIN_TOKEN": "this-is-a-perfectly-fine-32-byte-plus-token-value",
 	}
 }
 
@@ -33,7 +34,7 @@ func TestLoadFrom_MissingRequiredVars_ListsAllAtOnce(t *testing.T) {
 	}
 
 	msg := err.Error()
-	for _, want := range []string{"DATABASE_URL", "JWT_SECRET"} {
+	for _, want := range []string{"DATABASE_URL", "JWT_SECRET", "PLATFORM_ADMIN_TOKEN"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("LoadFrom error = %q, want it to mention missing var %q", msg, want)
 		}
@@ -77,6 +78,49 @@ func TestLoadFrom_JWTSecretExactly32Bytes_IsAccepted(t *testing.T) {
 
 	if _, err := config.LoadFrom(envMap(env)); err != nil {
 		t.Fatalf("LoadFrom: want no error for an exactly-32-byte JWT_SECRET, got %v", err)
+	}
+}
+
+func TestLoadFrom_PlatformAdminTokenTooShort(t *testing.T) {
+	env := validBaseEnv()
+	env["PLATFORM_ADMIN_TOKEN"] = "too-short"
+
+	_, err := config.LoadFrom(envMap(env))
+	if err == nil {
+		t.Fatal("LoadFrom: want error for a PLATFORM_ADMIN_TOKEN shorter than 32 bytes, got nil")
+	}
+	if !strings.Contains(err.Error(), "PLATFORM_ADMIN_TOKEN") {
+		t.Errorf("LoadFrom error = %q, want it to mention PLATFORM_ADMIN_TOKEN", err.Error())
+	}
+}
+
+func TestLoadFrom_PlatformAdminTokenExactly32Bytes_IsAccepted(t *testing.T) {
+	env := validBaseEnv()
+	env["PLATFORM_ADMIN_TOKEN"] = strings.Repeat("a", 32)
+
+	if _, err := config.LoadFrom(envMap(env)); err != nil {
+		t.Fatalf("LoadFrom: want no error for an exactly-32-byte PLATFORM_ADMIN_TOKEN, got %v", err)
+	}
+}
+
+func TestLoadFrom_ProductionWithExamplePlatformAdminToken_IsRejected(t *testing.T) {
+	env := validBaseEnv()
+	env["APP_ENV"] = "production"
+	env["PLATFORM_ADMIN_TOKEN"] = config.ExamplePlatformAdminToken
+
+	_, err := config.LoadFrom(envMap(env))
+	if err == nil {
+		t.Fatal("LoadFrom: want error when APP_ENV=production and PLATFORM_ADMIN_TOKEN matches the .env.example placeholder, got nil")
+	}
+}
+
+func TestLoadFrom_DevelopmentWithExamplePlatformAdminToken_IsAllowed(t *testing.T) {
+	env := validBaseEnv()
+	env["APP_ENV"] = "development"
+	env["PLATFORM_ADMIN_TOKEN"] = config.ExamplePlatformAdminToken
+
+	if _, err := config.LoadFrom(envMap(env)); err != nil {
+		t.Fatalf("LoadFrom: want no error for the example token outside production, got %v", err)
 	}
 }
 
@@ -219,7 +263,7 @@ func TestLoadFrom_MultipleInvalidValues_AreAllReported(t *testing.T) {
 		t.Fatal("LoadFrom: want error, got nil")
 	}
 	msg := err.Error()
-	for _, want := range []string{"DATABASE_URL", "JWT_SECRET", "DB_MAX_CONNS"} {
+	for _, want := range []string{"DATABASE_URL", "JWT_SECRET", "PLATFORM_ADMIN_TOKEN", "DB_MAX_CONNS"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("LoadFrom error = %q, want it to mention %q", msg, want)
 		}
@@ -243,6 +287,9 @@ func TestConfig_String_RedactsSecrets(t *testing.T) {
 	}
 	if strings.Contains(rendered, env["JWT_SECRET"]) {
 		t.Errorf("Config.String() = %q, must not leak the raw JWT_SECRET", rendered)
+	}
+	if strings.Contains(rendered, env["PLATFORM_ADMIN_TOKEN"]) {
+		t.Errorf("Config.String() = %q, must not leak the raw PLATFORM_ADMIN_TOKEN", rendered)
 	}
 	// Sanity check: non-secret fields are still visible for operators
 	// reading logs.
@@ -286,6 +333,7 @@ func TestLoadFrom_CORSAllowedOrigins_ExplicitOverride(t *testing.T) {
 func TestLoad_ReadsFromOSEnv(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://user:pw@localhost:5432/mesaposta")
 	t.Setenv("JWT_SECRET", strings.Repeat("b", 40))
+	t.Setenv("PLATFORM_ADMIN_TOKEN", strings.Repeat("c", 40))
 
 	cfg, err := config.Load()
 	if err != nil {

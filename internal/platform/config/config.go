@@ -28,9 +28,20 @@ import (
 // unchanged in a production environment (see LoadFrom's production check).
 const ExampleJWTSecret = "replace-with-a-random-secret-of-at-least-32-bytes"
 
+// ExamplePlatformAdminToken is the placeholder value shipped in
+// .env.example. Same shape/purpose as ExampleJWTSecret: well-formed enough
+// to pass the length check on its own, so the only thing that makes it
+// invalid is being used unchanged in production (see LoadFrom's production
+// check).
+const ExamplePlatformAdminToken = "replace-with-a-random-secret-of-at-least-32-bytes"
+
 // minJWTSecretBytes is the minimum acceptable length, in bytes, for
 // JWT_SECRET.
 const minJWTSecretBytes = 32
+
+// minPlatformAdminTokenBytes is the minimum acceptable length, in bytes,
+// for PLATFORM_ADMIN_TOKEN.
+const minPlatformAdminTokenBytes = 32
 
 // Defaults for optional configuration variables.
 const (
@@ -101,23 +112,30 @@ type Config struct {
 	// requests (e.g. the frontend's dev server). Defaults to
 	// ["http://localhost:3000"].
 	CORSAllowedOrigins []string
+
+	// PlatformAdminToken authenticates requests to the platform-admin-only
+	// tenant provisioning API (see internal/platform/platformadmin). Required,
+	// must be at least 32 bytes, and must not equal
+	// ExamplePlatformAdminToken when AppEnv is "production". Treated as a
+	// secret: never logged in full, see Config.String.
+	PlatformAdminToken string
 }
 
 // redacted is what Config.String prints in place of any secret value.
 const redacted = "***REDACTED***"
 
-// String renders cfg for logs. DatabaseURL and JWTSecret are ALWAYS
-// redacted, regardless of their content -- this is the one property this
-// method exists to guarantee, and it must never regress even if Config
-// grows more secret-shaped fields later.
+// String renders cfg for logs. DatabaseURL, JWTSecret and PlatformAdminToken
+// are ALWAYS redacted, regardless of their content -- this is the one
+// property this method exists to guarantee, and it must never regress even
+// if Config grows more secret-shaped fields later.
 func (c Config) String() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Config{AppEnv:%s Port:%s DatabaseURL:%s JWTSecret:%s "+
 		"DBMaxConns:%d DBMinConns:%d DBMaxConnLifetime:%s DBMaxConnIdleTime:%s DBConnectTimeout:%s "+
-		"OTELServiceName:%s OTELExporterOTLPEndpoint:%s CORSAllowedOrigins:%s}",
+		"OTELServiceName:%s OTELExporterOTLPEndpoint:%s CORSAllowedOrigins:%s PlatformAdminToken:%s}",
 		c.AppEnv, c.Port, redacted, redacted,
 		c.DBMaxConns, c.DBMinConns, c.DBMaxConnLifetime, c.DBMaxConnIdleTime, c.DBConnectTimeout,
-		c.OTELServiceName, c.OTELExporterOTLPEndpoint, c.CORSAllowedOrigins)
+		c.OTELServiceName, c.OTELExporterOTLPEndpoint, c.CORSAllowedOrigins, redacted)
 	return b.String()
 }
 
@@ -232,6 +250,8 @@ func LoadFrom(getenv getenvFunc) (*Config, error) {
 		OTELExporterOTLPEndpoint: stringWithDefault(getenv, "OTEL_EXPORTER_OTLP_ENDPOINT", defaultOTELExporterOTLPEndpoint),
 
 		CORSAllowedOrigins: sliceWithDefault(getenv, "CORS_ALLOWED_ORIGINS", defaultCORSAllowedOrigins),
+
+		PlatformAdminToken: requireString(getenv, v, "PLATFORM_ADMIN_TOKEN"),
 	}
 
 	if cfg.JWTSecret != "" && len(cfg.JWTSecret) < minJWTSecretBytes {
@@ -239,6 +259,13 @@ func LoadFrom(getenv getenvFunc) (*Config, error) {
 	}
 	if cfg.AppEnv == "production" && cfg.JWTSecret == ExampleJWTSecret {
 		v.addf("JWT_SECRET must not be the .env.example placeholder value when APP_ENV=production")
+	}
+
+	if cfg.PlatformAdminToken != "" && len(cfg.PlatformAdminToken) < minPlatformAdminTokenBytes {
+		v.addf("PLATFORM_ADMIN_TOKEN must be at least %d bytes, got %d", minPlatformAdminTokenBytes, len(cfg.PlatformAdminToken))
+	}
+	if cfg.AppEnv == "production" && cfg.PlatformAdminToken == ExamplePlatformAdminToken {
+		v.addf("PLATFORM_ADMIN_TOKEN must not be the .env.example placeholder value when APP_ENV=production")
 	}
 
 	if err := v.err(); err != nil {

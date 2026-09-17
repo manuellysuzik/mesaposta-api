@@ -175,10 +175,11 @@ func TestRun_MigrateOnBootInProduction_RefusedBeforeOpeningAnyDatabaseConnection
 	// reason instead of failing for the right reason, which is itself a
 	// useful signal that the guard moved to the wrong place in run().
 	env := map[string]string{
-		"APP_ENV":         "production",
-		"MIGRATE_ON_BOOT": "true",
-		"DATABASE_URL":    "postgres://user:pass@127.0.0.1:1/unreachable",
-		"JWT_SECRET":      "a-production-grade-secret-that-is-at-least-32-bytes-long",
+		"APP_ENV":              "production",
+		"MIGRATE_ON_BOOT":      "true",
+		"DATABASE_URL":         "postgres://user:pass@127.0.0.1:1/unreachable",
+		"JWT_SECRET":           "a-production-grade-secret-that-is-at-least-32-bytes-long",
+		"PLATFORM_ADMIN_TOKEN": "a-production-grade-token-that-is-at-least-32-bytes-long",
 	}
 	getenv := func(k string) string { return env[k] }
 

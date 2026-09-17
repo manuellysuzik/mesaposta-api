@@ -81,6 +81,9 @@ services:
       DATABASE_URL: postgres://mesaposta:mesaposta@postgres:5432/mesaposta?sslmode=disable
       # JWT secret for token signing (for development only; replace in production)
       JWT_SECRET: replace-with-a-random-secret-of-at-least-32-bytes
+      # Shared secret for the platform-admin-only tenant provisioning API
+      # (for development only; replace in production)
+      PLATFORM_ADMIN_TOKEN: replace-with-a-random-secret-of-at-least-32-bytes
       # Enable database migrations on startup (safe for development)
       MIGRATE_ON_BOOT: "true"
       # OTLP HTTP endpoint for telemetry export

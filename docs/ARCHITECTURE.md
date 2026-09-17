@@ -172,10 +172,14 @@ ou faz RLS bloquear silenciosamente:
 5. Exceção deliberada: a tabela `tenants` (migration `0008_tenants.sql`)
    **não** leva a policy `tenant_isolation` — ela é quem *estabelece*
    tenant, não pode depender de um tenant já resolvido. Ela tem uma policy
-   de SELECT permissiva + `GRANT SELECT` limitado a colunas específicas, sem
-   nenhum grant de escrita para o papel da aplicação. Está documentada
-   assim no próprio SQL da migration — se você vir uma tabela sem
-   `tenant_isolation`, essa é a única que deveria estar assim.
+   de SELECT permissiva + `GRANT SELECT` limitado a colunas específicas.
+   Está documentada assim no próprio SQL da migration — se você vir uma
+   tabela sem `tenant_isolation`, essa é a única que deveria estar assim.
+   A migration `0012_tenants_platform_fields.sql` adicionou grants de
+   `INSERT`/`UPDATE` (também por coluna, excluindo `id`/`slug` do update)
+   para a API de provisionamento de tenants (`internal/platform/platformadmin`)
+   — autorização real fica inteiramente no token compartilhado dessa API,
+   não no RLS. Ver [ADR-0008](adr/0008-platform-tenant-provisioning.md).
 
 ## 6. Fitness function de arquitetura (R1–R6)
 
