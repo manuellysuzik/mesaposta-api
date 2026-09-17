@@ -9,16 +9,16 @@ import "github.com/golang-jwt/jwt/v5"
 type Role string
 
 const (
-	// RoleGestor is a tenant's management-level role.
-	RoleGestor Role = "gestor"
-	// RoleFuncionario is a tenant's staff-level role.
-	RoleFuncionario Role = "funcionario"
+	// RoleManager is a tenant's management-level role.
+	RoleManager Role = "manager"
+	// RoleEmployee is a tenant's staff-level role.
+	RoleEmployee Role = "employee"
 )
 
 // Valid reports whether r is one of the closed set of known roles.
 func (r Role) Valid() bool {
 	switch r {
-	case RoleGestor, RoleFuncionario:
+	case RoleManager, RoleEmployee:
 		return true
 	default:
 		return false

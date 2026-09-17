@@ -13,8 +13,8 @@ func TestRole_Valid(t *testing.T) {
 		role domain.Role
 		want bool
 	}{
-		{"gestor", domain.RoleGestor, true},
-		{"funcionario", domain.RoleFuncionario, true},
+		{"manager", domain.RoleManager, true},
+		{"employee", domain.RoleEmployee, true},
 		{"empty", domain.Role(""), false},
 		{"unknown", domain.Role("admin"), false},
 	}
@@ -30,7 +30,7 @@ func TestRole_Valid(t *testing.T) {
 
 func TestParseRole(t *testing.T) {
 	t.Run("valid values round-trip", func(t *testing.T) {
-		for _, want := range []domain.Role{domain.RoleGestor, domain.RoleFuncionario} {
+		for _, want := range []domain.Role{domain.RoleManager, domain.RoleEmployee} {
 			got, err := domain.ParseRole(string(want))
 			if err != nil {
 				t.Fatalf("ParseRole(%q): unexpected error: %v", want, err)

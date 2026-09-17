@@ -20,18 +20,18 @@ import (
 type Role string
 
 const (
-	// RoleGestor is a tenant's management-level role: can invite/manage
+	// RoleManager is a tenant's management-level role: can invite/manage
 	// staff (see ../application/create_user.go) in addition to everything
-	// RoleFuncionario can do.
-	RoleGestor Role = "gestor"
-	// RoleFuncionario is a tenant's staff-level role.
-	RoleFuncionario Role = "funcionario"
+	// RoleEmployee can do.
+	RoleManager Role = "manager"
+	// RoleEmployee is a tenant's staff-level role.
+	RoleEmployee Role = "employee"
 )
 
 // Valid reports whether r is one of the closed set of known roles.
 func (r Role) Valid() bool {
 	switch r {
-	case RoleGestor, RoleFuncionario:
+	case RoleManager, RoleEmployee:
 		return true
 	default:
 		return false

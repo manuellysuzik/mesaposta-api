@@ -54,7 +54,7 @@ func mustDiscountAuditAccessToken(t *testing.T, tenantID, subject string) string
 	if err != nil {
 		t.Fatalf("token.NewIssuer: %v", err)
 	}
-	tok, err := issuer.Issue(subject, tenantID, token.RoleGestor, "session-"+subject)
+	tok, err := issuer.Issue(subject, tenantID, token.RoleManager, "session-"+subject)
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}

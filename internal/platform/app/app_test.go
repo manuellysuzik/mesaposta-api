@@ -162,7 +162,7 @@ func validClaims(role token.Role) token.Claims {
 func TestNewApp_Probe_ExpiredToken_Returns401(t *testing.T) {
 	handler := newTestApp(t)
 
-	claims := validClaims(token.RoleGestor)
+	claims := validClaims(token.RoleManager)
 	now := time.Now().UTC()
 	claims.IssuedAt = jwt.NewNumericDate(now.Add(-2 * time.Hour))
 	claims.NotBefore = jwt.NewNumericDate(now.Add(-2 * time.Hour))
@@ -187,18 +187,18 @@ func TestNewApp_Probe_ExpiredToken_Returns401(t *testing.T) {
 func TestNewApp_Probe_InsufficientRole_Returns403(t *testing.T) {
 	handler := newTestApp(t)
 
-	// POST /v1/_probe/events is restricted to RoleGestor; a well-formed,
-	// non-expired token for RoleFuncionario must be rejected with 403, not
+	// POST /v1/_probe/events is restricted to RoleManager; a well-formed,
+	// non-expired token for RoleEmployee must be rejected with 403, not
 	// 401 or 500.
-	funcionarioToken := signToken(t, validClaims(token.RoleFuncionario))
+	employeeToken := signToken(t, validClaims(token.RoleEmployee))
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/_probe/events", nil)
-	req.Header.Set("Authorization", "Bearer "+funcionarioToken)
+	req.Header.Set("Authorization", "Bearer "+employeeToken)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusForbidden {
-		t.Fatalf("POST /v1/_probe/events (funcionario role): status = %d, want %d (body: %s)",
+		t.Fatalf("POST /v1/_probe/events (employee role): status = %d, want %d (body: %s)",
 			rec.Code, http.StatusForbidden, rec.Body.String())
 	}
 
@@ -232,7 +232,7 @@ func TestBuildVerifierAndBuildIssuer_AgreeOnKIDIssuerAudience(t *testing.T) {
 		t.Fatalf("app.BuildVerifier: %v", err)
 	}
 
-	signed, err := issuer.Issue("user-1", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", token.RoleGestor, "session-1")
+	signed, err := issuer.Issue("user-1", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", token.RoleManager, "session-1")
 	if err != nil {
 		t.Fatalf("issuer.Issue: %v", err)
 	}

@@ -7,10 +7,10 @@ import (
 )
 
 // MountTables registers /mesas routes (table management: list, get,
-// create, activate, deactivate) under r. Papel gestor only -- see this
+// create, activate, deactivate) under r. Papel manager only -- see this
 // package's own doc comment for why that role restriction is applied by
 // the CALLER (internal/platform/app.NewApp), not here: pass
-// r.With(auth.RequireRole(token.RoleGestor)) as r.
+// r.With(auth.RequireRole(token.RoleManager)) as r.
 func MountTables(r chi.Router, uow domain.UnitOfWork) {
 	r.Route("/mesas", func(r chi.Router) {
 		r.Get("/", listTablesHandler(uow))
@@ -22,7 +22,7 @@ func MountTables(r chi.Router, uow domain.UnitOfWork) {
 }
 
 // MountOrders registers /pedidos routes (list, get, confirm, and advance
-// through the kitchen-status lifecycle) under r. Papel gestor + funcionario
+// through the kitchen-status lifecycle) under r. Papel manager + employee
 // -- see MountTables' own doc comment for how the caller applies the
 // right role.
 func MountOrders(r chi.Router, uow domain.UnitOfWork) {

@@ -107,9 +107,9 @@ func TestUsersRLS_TenantScopedQuery_DoesNotSeeOtherTenantsUsers(t *testing.T) {
 	tenantB := mustTenantID(t, "bbbbbbbb-2222-2222-2222-222222222222")
 
 	seedUser(t, adminConn, "10000000-0000-0000-0000-000000000001", tenantA.String(),
-		"owner-a@example.com", dummyEncodedHash, "gestor", true)
+		"owner-a@example.com", dummyEncodedHash, "manager", true)
 	seedUser(t, adminConn, "20000000-0000-0000-0000-000000000002", tenantB.String(),
-		"owner-b@example.com", dummyEncodedHash, "gestor", true)
+		"owner-b@example.com", dummyEncodedHash, "manager", true)
 
 	pool, err := db.Open(ctx, appURL)
 	if err != nil {
@@ -165,9 +165,9 @@ func TestUsersRLS_LookupUserCredentialsByEmail_FindsUserOfAnyTenant(t *testing.T
 	tenantB := mustTenantID(t, "bbbbbbbb-4444-4444-4444-444444444444")
 
 	seedUser(t, adminConn, "30000000-0000-0000-0000-000000000003", tenantA.String(),
-		"staff-a@example.com", dummyEncodedHash, "funcionario", true)
+		"staff-a@example.com", dummyEncodedHash, "employee", true)
 	seedUser(t, adminConn, "40000000-0000-0000-0000-000000000004", tenantB.String(),
-		"staff-b@example.com", dummyEncodedHash, "funcionario", true)
+		"staff-b@example.com", dummyEncodedHash, "employee", true)
 
 	pool, err := db.Open(ctx, appURL)
 	if err != nil {
@@ -222,7 +222,7 @@ func TestUsersRLS_TenantIsolationWinsOverLoginLookup(t *testing.T) {
 
 	const otherTenantUserID = "50000000-0000-0000-0000-000000000005"
 	seedUser(t, adminConn, otherTenantUserID, tenantB.String(),
-		"secret-b@example.com", dummyEncodedHash, "gestor", true)
+		"secret-b@example.com", dummyEncodedHash, "manager", true)
 
 	pool, err := db.Open(ctx, appURL)
 	if err != nil {

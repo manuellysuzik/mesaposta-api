@@ -123,7 +123,7 @@ func TestAuthenticate_WrongSchemeOrEmptyToken_Returns401AndNeverCallsHandler(t *
 func TestAuthenticate_ValidToken_ExposesExactTenantIDToHandler(t *testing.T) {
 	issuer, verifier := newTestTokenPair(t)
 
-	signed, err := issuer.Issue("user-1", tenantAUUID, token.RoleGestor, "session-1")
+	signed, err := issuer.Issue("user-1", tenantAUUID, token.RoleManager, "session-1")
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
@@ -148,8 +148,8 @@ func TestAuthenticate_ValidToken_ExposesExactTenantIDToHandler(t *testing.T) {
 	if result.tenantID != tenantAUUID {
 		t.Fatalf("tenant.From = %q, want %q", result.tenantID, tenantAUUID)
 	}
-	if !result.hasClaims || result.role != token.RoleGestor {
-		t.Fatalf("expected claims with role %q, got hasClaims=%v role=%q", token.RoleGestor, result.hasClaims, result.role)
+	if !result.hasClaims || result.role != token.RoleManager {
+		t.Fatalf("expected claims with role %q, got hasClaims=%v role=%q", token.RoleManager, result.hasClaims, result.role)
 	}
 }
 
@@ -162,7 +162,7 @@ func TestAuthenticate_MalformedTenantIDClaim_Returns401NotServerError(t *testing
 	// verifies successfully -- the failure must surface inside
 	// Authenticate, when it calls tenant.Parse, and must be reported as an
 	// authentication failure (401), never a 500.
-	signed, err := issuer.Issue("user-1", "not-a-valid-uuid", token.RoleGestor, "session-1")
+	signed, err := issuer.Issue("user-1", "not-a-valid-uuid", token.RoleManager, "session-1")
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
@@ -186,14 +186,14 @@ func TestAuthenticate_MalformedTenantIDClaim_Returns401NotServerError(t *testing
 func TestRequireRole_InsufficientRole_Returns403(t *testing.T) {
 	issuer, verifier := newTestTokenPair(t)
 
-	signed, err := issuer.Issue("user-1", tenantAUUID, token.RoleFuncionario, "session-1")
+	signed, err := issuer.Issue("user-1", tenantAUUID, token.RoleEmployee, "session-1")
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
 
 	result := &probeResult{}
 	handler := auth.Authenticate(verifier)(
-		auth.RequireRole(token.RoleGestor)(probeHandler(result)),
+		auth.RequireRole(token.RoleManager)(probeHandler(result)),
 	)
 
 	req := httptest.NewRequest("GET", "/", nil)
@@ -212,14 +212,14 @@ func TestRequireRole_InsufficientRole_Returns403(t *testing.T) {
 func TestRequireRole_SufficientRole_CallsHandler(t *testing.T) {
 	issuer, verifier := newTestTokenPair(t)
 
-	signed, err := issuer.Issue("user-1", tenantAUUID, token.RoleGestor, "session-1")
+	signed, err := issuer.Issue("user-1", tenantAUUID, token.RoleManager, "session-1")
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
 
 	result := &probeResult{}
 	handler := auth.Authenticate(verifier)(
-		auth.RequireRole(token.RoleGestor, token.RoleFuncionario)(probeHandler(result)),
+		auth.RequireRole(token.RoleManager, token.RoleEmployee)(probeHandler(result)),
 	)
 
 	req := httptest.NewRequest("GET", "/", nil)
@@ -242,11 +242,11 @@ func TestRequireRole_SufficientRole_CallsHandler(t *testing.T) {
 func TestAuthenticate_TenantIsolation_TokenFromOneTenantNeverLeaksAnothers(t *testing.T) {
 	issuer, verifier := newTestTokenPair(t)
 
-	tokenA, err := issuer.Issue("user-a", tenantAUUID, token.RoleGestor, "session-a")
+	tokenA, err := issuer.Issue("user-a", tenantAUUID, token.RoleManager, "session-a")
 	if err != nil {
 		t.Fatalf("Issue tokenA: %v", err)
 	}
-	tokenB, err := issuer.Issue("user-b", tenantBUUID, token.RoleGestor, "session-b")
+	tokenB, err := issuer.Issue("user-b", tenantBUUID, token.RoleManager, "session-b")
 	if err != nil {
 		t.Fatalf("Issue tokenB: %v", err)
 	}
@@ -284,7 +284,7 @@ func TestAuthenticate_TenantIsolation_TokenFromOneTenantNeverLeaksAnothers(t *te
 func TestAuthenticate_NeverLogsRawToken(t *testing.T) {
 	issuer, verifier := newTestTokenPair(t)
 
-	validToken, err := issuer.Issue("user-1", tenantAUUID, token.RoleGestor, "session-1")
+	validToken, err := issuer.Issue("user-1", tenantAUUID, token.RoleManager, "session-1")
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
@@ -338,7 +338,7 @@ func TestActorIDFrom_NoClaims_ReturnsEmptyString(t *testing.T) {
 
 func TestActorIDFrom_AuthenticatedRequest_ReturnsTokenSubject(t *testing.T) {
 	issuer, verifier := newTestTokenPair(t)
-	signed, err := issuer.Issue("user-42", tenantAUUID, token.RoleGestor, "session-1")
+	signed, err := issuer.Issue("user-42", tenantAUUID, token.RoleManager, "session-1")
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}

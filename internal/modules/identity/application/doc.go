@@ -1,5 +1,5 @@
 // Package application implements the identity module's use cases:
-// AuthenticateUser (login), CreateUser (gestor invites staff),
+// AuthenticateUser (login), CreateUser (manager invites staff),
 // RefreshSession (rotate a refresh token, re-issue an access token) and
 // Logout (revoke a refresh token's whole family).
 //

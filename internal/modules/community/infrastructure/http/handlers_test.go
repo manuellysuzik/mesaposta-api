@@ -58,7 +58,7 @@ func mustTestIssuer(t *testing.T) *token.Issuer {
 // whose tenant_id claim is tenantIDStr.
 func mustAccessToken(t *testing.T, subject, tenantIDStr string) string {
 	t.Helper()
-	tok, err := mustTestIssuer(t).Issue(subject, tenantIDStr, token.RoleGestor, "session-"+subject)
+	tok, err := mustTestIssuer(t).Issue(subject, tenantIDStr, token.RoleManager, "session-"+subject)
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}

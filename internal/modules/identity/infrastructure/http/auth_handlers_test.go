@@ -104,18 +104,18 @@ func decodeLoginEnvelope(t *testing.T, body *bytes.Buffer) map[string]json.RawMe
 
 func TestLoginHandler_ValidCredentials_Returns200WithVerifiableToken(t *testing.T) {
 	lookup := newFakeCredentialsLookup()
-	lookup.byEmail["gestor@example.com"] = db.UserCredentials{
+	lookup.byEmail["manager@example.com"] = db.UserCredentials{
 		ID:           "aaaaaaaa-bbbb-cccc-dddd-000000000001",
 		TenantID:     "aaaaaaaa-bbbb-cccc-dddd-000000000002",
-		Email:        "gestor@example.com",
+		Email:        "manager@example.com",
 		PasswordHash: mustHashPassword(t, "correct-horse-battery-staple"),
-		Role:         "gestor",
+		Role:         "manager",
 		IsActive:     true,
 	}
 	issuer := newTestIssuer(t)
 	router := newTestRouter(lookup, issuer)
 
-	w := doLoginRequest(router, "gestor@example.com", "correct-horse-battery-staple")
+	w := doLoginRequest(router, "manager@example.com", "correct-horse-battery-staple")
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body=%s)", w.Code, w.Body.String())
@@ -136,8 +136,8 @@ func TestLoginHandler_ValidCredentials_Returns200WithVerifiableToken(t *testing.
 	if resp.AccessToken == "" {
 		t.Fatal("access_token must not be empty")
 	}
-	if resp.Role != "gestor" {
-		t.Errorf("role = %q, want %q", resp.Role, "gestor")
+	if resp.Role != "manager" {
+		t.Errorf("role = %q, want %q", resp.Role, "manager")
 	}
 	if resp.UserID != "aaaaaaaa-bbbb-cccc-dddd-000000000001" {
 		t.Errorf("user_id = %q, want the fake user's id", resp.UserID)
@@ -154,8 +154,8 @@ func TestLoginHandler_ValidCredentials_Returns200WithVerifiableToken(t *testing.
 	if claims.TenantID != resp.TenantID {
 		t.Errorf("verified claims tenant_id = %q, want %q", claims.TenantID, resp.TenantID)
 	}
-	if string(claims.Role) != "gestor" {
-		t.Errorf("verified claims role = %q, want %q", claims.Role, "gestor")
+	if string(claims.Role) != "manager" {
+		t.Errorf("verified claims role = %q, want %q", claims.Role, "manager")
 	}
 }
 
@@ -173,17 +173,17 @@ func TestLoginHandler_UnknownEmail_Returns401Uniform(t *testing.T) {
 
 func TestLoginHandler_WrongPassword_Returns401Uniform(t *testing.T) {
 	lookup := newFakeCredentialsLookup()
-	lookup.byEmail["funcionario@example.com"] = db.UserCredentials{
+	lookup.byEmail["employee@example.com"] = db.UserCredentials{
 		ID:           "aaaaaaaa-bbbb-cccc-dddd-000000000003",
 		TenantID:     "aaaaaaaa-bbbb-cccc-dddd-000000000002",
-		Email:        "funcionario@example.com",
+		Email:        "employee@example.com",
 		PasswordHash: mustHashPassword(t, "the-real-password"),
-		Role:         "funcionario",
+		Role:         "employee",
 		IsActive:     true,
 	}
 	router := newTestRouter(lookup, newTestIssuer(t))
 
-	w := doLoginRequest(router, "funcionario@example.com", "wrong-password")
+	w := doLoginRequest(router, "employee@example.com", "wrong-password")
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401 (body=%s)", w.Code, w.Body.String())
@@ -198,7 +198,7 @@ func TestLoginHandler_InactiveUser_Returns401Uniform(t *testing.T) {
 		TenantID:     "aaaaaaaa-bbbb-cccc-dddd-000000000002",
 		Email:        "deactivated@example.com",
 		PasswordHash: mustHashPassword(t, "correct-password"),
-		Role:         "gestor",
+		Role:         "manager",
 		IsActive:     false,
 	}
 	router := newTestRouter(lookup, newTestIssuer(t))

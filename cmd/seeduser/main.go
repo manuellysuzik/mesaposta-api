@@ -14,9 +14,9 @@
 //
 //	go run ./cmd/seeduser \
 //	  -database-url "postgres://mesaposta:mesaposta@localhost:5432/mesaposta?sslmode=disable" \
-//	  -email gestor@example.com \
+//	  -email manager@example.com \
 //	  -password "correct-horse-battery-staple" \
-//	  -role gestor
+//	  -role manager
 //
 // -tenant-id is optional: when omitted, a brand-new random UUID is
 // generated and printed, since this tool has no way to provision a real row
@@ -57,7 +57,7 @@ func run(args []string, stdout, stderr *os.File) int {
 	databaseURL := fs.String("database-url", "", "Postgres connection string (required)")
 	email := fs.String("email", "", "login email for the new user (required)")
 	plainPassword := fs.String("password", "", "plaintext password for the new user (required)")
-	role := fs.String("role", "", "gestor or funcionario (required)")
+	role := fs.String("role", "", "manager or employee (required)")
 	tenantIDFlag := fs.String("tenant-id", "", "existing tenant UUID to attach the user to (optional -- a random one is generated if omitted)")
 
 	if err := fs.Parse(args); err != nil {

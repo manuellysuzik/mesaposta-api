@@ -71,7 +71,7 @@ future login handler) having to duplicate or guess the constants
 ### The `/v1/_probe` route
 
 `NewApp` registers exactly one non-health route: `POST /v1/_probe/events`
-(role `gestor` only) writes a single row via
+(role `manager` only) writes a single row via
 `internal/platform/outbox/postgres` (Bloco E's Postgres outbox adapter);
 `GET /v1/_probe/events/{aggregateID}` (any authenticated role) reads it
 back through a tenant-scoped `db.Scope`. This is deliberately **not** a

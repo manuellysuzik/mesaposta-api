@@ -32,7 +32,7 @@ type UserCredentials struct {
 	// attempt's plaintext password against (see
 	// internal/platform/auth/password.Verify).
 	PasswordHash string
-	// Role is the user's raw role string ("gestor" or "funcionario").
+	// Role is the user's raw role string ("manager" or "employee").
 	Role string
 	// IsActive reports whether this user is currently allowed to
 	// authenticate. A deactivated user's credentials are still returned

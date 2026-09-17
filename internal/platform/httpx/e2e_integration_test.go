@@ -190,8 +190,8 @@ func doRequest(t *testing.T, method, url, bearerToken string) (status int, env e
 func TestE2E_JWTToTenantContextToRLSToEnvelope(t *testing.T) {
 	baseURL, issuer := setupE2EApp(t)
 
-	tokenA := mustIssue(t, issuer, "user-a", tenantAID, token.RoleGestor)
-	tokenB := mustIssue(t, issuer, "user-b", tenantBID, token.RoleGestor)
+	tokenA := mustIssue(t, issuer, "user-a", tenantAID, token.RoleManager)
+	tokenB := mustIssue(t, issuer, "user-b", tenantBID, token.RoleManager)
 
 	t.Run("tenant A creates a probe event and can read it back", func(t *testing.T) {
 		status, env := doRequest(t, http.MethodPost, baseURL+"/v1/_probe/events", tokenA)
@@ -259,7 +259,7 @@ func TestE2E_JWTToTenantContextToRLSToEnvelope(t *testing.T) {
 	})
 
 	t.Run("expired token is rejected with 401", func(t *testing.T) {
-		expired := mustExpiredToken(t, tenantAID, token.RoleGestor)
+		expired := mustExpiredToken(t, tenantAID, token.RoleManager)
 
 		status, env := doRequest(t, http.MethodGet, baseURL+"/v1/_probe/events/whatever", expired)
 		if status != http.StatusUnauthorized {
@@ -274,22 +274,22 @@ func TestE2E_JWTToTenantContextToRLSToEnvelope(t *testing.T) {
 	})
 
 	t.Run("insufficient role is rejected with 403, not 401", func(t *testing.T) {
-		funcionarioToken := mustIssue(t, issuer, "user-c", tenantAID, token.RoleFuncionario)
+		employeeToken := mustIssue(t, issuer, "user-c", tenantAID, token.RoleEmployee)
 
-		status, env := doRequest(t, http.MethodPost, baseURL+"/v1/_probe/events", funcionarioToken)
+		status, env := doRequest(t, http.MethodPost, baseURL+"/v1/_probe/events", employeeToken)
 		if status != http.StatusForbidden {
-			t.Fatalf("POST /v1/_probe/events (funcionario role, gestor-only route): status = %d, want %d (env: %+v)",
+			t.Fatalf("POST /v1/_probe/events (employee role, manager-only route): status = %d, want %d (env: %+v)",
 				status, http.StatusForbidden, env)
 		}
 		if env.Error == nil || env.Error.Code != "insufficient_role" {
 			t.Errorf("env.Error = %+v, want code %q", env.Error, "insufficient_role")
 		}
 
-		// The same funcionario token IS accepted by the GET route (any
+		// The same employee token IS accepted by the GET route (any
 		// authenticated role is allowed to read).
-		status, _ = doRequest(t, http.MethodGet, baseURL+"/v1/_probe/events/whatever", funcionarioToken)
+		status, _ = doRequest(t, http.MethodGet, baseURL+"/v1/_probe/events/whatever", employeeToken)
 		if status != http.StatusNotFound {
-			t.Fatalf("GET /v1/_probe/events/whatever (funcionario role, any-role route): status = %d, want %d (route itself must accept the role)",
+			t.Fatalf("GET /v1/_probe/events/whatever (employee role, any-role route): status = %d, want %d (route itself must accept the role)",
 				status, http.StatusNotFound)
 		}
 	})

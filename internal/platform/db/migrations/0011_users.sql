@@ -67,7 +67,7 @@ CREATE TABLE users (
     is_active boolean NOT NULL DEFAULT true,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
-    CONSTRAINT users_role_check CHECK (role IN ('gestor', 'funcionario'))
+    CONSTRAINT users_role_check CHECK (role IN ('manager', 'employee'))
 );
 
 CREATE INDEX users_tenant_id_idx ON users (tenant_id);

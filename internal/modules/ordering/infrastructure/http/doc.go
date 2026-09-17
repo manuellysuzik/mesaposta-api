@@ -11,8 +11,8 @@
 // UNLIKE every other module's Mount in this codebase (crm, community,
 // catalog, operations), this package exports TWO Mount functions --
 // MountTables and MountOrders (see router.go) -- instead of one, because
-// mesas and pedidos routes require DIFFERENT roles (mesas: gestor only;
-// pedidos: gestor + funcionario). Neither function applies
+// mesas and pedidos routes require DIFFERENT roles (mesas: manager only;
+// pedidos: manager + employee). Neither function applies
 // auth.RequireRole itself: internal/platform/app.NewApp, which already
 // imports internal/platform/auth for exactly this purpose (see its own
 // probe routes), applies the right role to each ahead of time -- see

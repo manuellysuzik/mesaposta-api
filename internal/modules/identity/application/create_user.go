@@ -28,9 +28,9 @@ type CreateUserInput struct {
 	Role     domain.Role
 }
 
-// CreateUser is the application-layer use case a gestor uses to invite a
+// CreateUser is the application-layer use case a manager uses to invite a
 // new staff member (POST /v1/users -- see
-// ../infrastructure/http/user_handlers.go, mounted gestor-only at the
+// ../infrastructure/http/user_handlers.go, mounted manager-only at the
 // composition root, exactly like internal/modules/ordering's own
 // role-differentiated routes). There is no public self-registration
 // endpoint anywhere in this module -- see this module's task notes.
@@ -39,7 +39,7 @@ type CreateUserInput struct {
 // BEFORE domain.NewUser is called: domain/ must never see a plaintext
 // password or know Argon2id exists (architecture rule R1).
 //
-// actorID identifies the gestor who requested the invite, for the audit
+// actorID identifies the manager who requested the invite, for the audit
 // trail -- sourced by the HTTP layer from internal/platform/auth.ActorIDFrom,
 // mirroring internal/modules/crm/application.CreditLoyaltyPoints's own
 // actorID parameter exactly. See docs/adr/0006-audit-log.md.

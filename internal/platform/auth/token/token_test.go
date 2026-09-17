@@ -61,7 +61,7 @@ func signRaw(t *testing.T, method jwt.SigningMethod, key any, kid string, claims
 func validClaims(now time.Time) token.Claims {
 	return token.Claims{
 		TenantID:  "11111111-1111-1111-1111-111111111111",
-		Role:      token.RoleGestor,
+		Role:      token.RoleManager,
 		SessionID: "session-abc",
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   "user-42",
@@ -78,7 +78,7 @@ func TestIssueAndVerify_RoundTripValidToken(t *testing.T) {
 	issuer := newTestIssuer(t)
 	verifier := newTestVerifier(t, map[string][]byte{testKID: testSecret()})
 
-	signed, err := issuer.Issue("user-42", "11111111-1111-1111-1111-111111111111", token.RoleGestor, "session-abc")
+	signed, err := issuer.Issue("user-42", "11111111-1111-1111-1111-111111111111", token.RoleManager, "session-abc")
 	if err != nil {
 		t.Fatalf("Issue() returned error: %v", err)
 	}
@@ -94,8 +94,8 @@ func TestIssueAndVerify_RoundTripValidToken(t *testing.T) {
 	if claims.TenantID != "11111111-1111-1111-1111-111111111111" {
 		t.Errorf("TenantID = %q, want %q", claims.TenantID, "11111111-1111-1111-1111-111111111111")
 	}
-	if claims.Role != token.RoleGestor {
-		t.Errorf("Role = %q, want %q", claims.Role, token.RoleGestor)
+	if claims.Role != token.RoleManager {
+		t.Errorf("Role = %q, want %q", claims.Role, token.RoleManager)
 	}
 	if claims.SessionID != "session-abc" {
 		t.Errorf("SessionID = %q, want %q", claims.SessionID, "session-abc")
@@ -126,7 +126,7 @@ func TestVerify_TamperedSignatureIsUnauthenticated(t *testing.T) {
 	issuer := newTestIssuer(t)
 	verifier := newTestVerifier(t, map[string][]byte{testKID: testSecret()})
 
-	signed, err := issuer.Issue("user-42", "11111111-1111-1111-1111-111111111111", token.RoleGestor, "session-abc")
+	signed, err := issuer.Issue("user-42", "11111111-1111-1111-1111-111111111111", token.RoleManager, "session-abc")
 	if err != nil {
 		t.Fatalf("Issue() returned error: %v", err)
 	}
@@ -369,8 +369,8 @@ func TestRole_Valid(t *testing.T) {
 		role token.Role
 		want bool
 	}{
-		{token.RoleGestor, true},
-		{token.RoleFuncionario, true},
+		{token.RoleManager, true},
+		{token.RoleEmployee, true},
 		{token.Role(""), false},
 		{token.Role("unknown"), false},
 	}
@@ -437,10 +437,10 @@ func TestIssue_RejectsInvalidInput(t *testing.T) {
 		role      token.Role
 		sessionID string
 	}{
-		{"empty subject", "", "tenant-1", token.RoleGestor, "session-1"},
-		{"empty tenant id", "user-1", "", token.RoleGestor, "session-1"},
+		{"empty subject", "", "tenant-1", token.RoleManager, "session-1"},
+		{"empty tenant id", "user-1", "", token.RoleManager, "session-1"},
 		{"invalid role", "user-1", "tenant-1", token.Role("bogus"), "session-1"},
-		{"empty session id", "user-1", "tenant-1", token.RoleGestor, ""},
+		{"empty session id", "user-1", "tenant-1", token.RoleManager, ""},
 	}
 
 	for _, tt := range tests {

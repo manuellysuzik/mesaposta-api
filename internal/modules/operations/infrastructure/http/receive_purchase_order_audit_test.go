@@ -63,7 +63,7 @@ func mustAuditTestAccessToken(t *testing.T, subject string) string {
 	if err != nil {
 		t.Fatalf("token.NewIssuer: %v", err)
 	}
-	tok, err := issuer.Issue(subject, auditTestTenantID, token.RoleGestor, "session-"+subject)
+	tok, err := issuer.Issue(subject, auditTestTenantID, token.RoleManager, "session-"+subject)
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}

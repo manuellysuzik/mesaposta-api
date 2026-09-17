@@ -23,7 +23,7 @@ func TestNewUser_Valid(t *testing.T) {
 	id := domain.NewID()
 
 	before := time.Now().UTC()
-	user, err := domain.NewUser(id, tenantID, "owner@example.com", "some-hash", domain.RoleGestor)
+	user, err := domain.NewUser(id, tenantID, "owner@example.com", "some-hash", domain.RoleManager)
 	after := time.Now().UTC()
 	if err != nil {
 		t.Fatalf("NewUser: unexpected error: %v", err)
@@ -41,8 +41,8 @@ func TestNewUser_Valid(t *testing.T) {
 	if user.PasswordHash() != "some-hash" {
 		t.Errorf("PasswordHash() = %q, want %q", user.PasswordHash(), "some-hash")
 	}
-	if user.Role() != domain.RoleGestor {
-		t.Errorf("Role() = %q, want %q", user.Role(), domain.RoleGestor)
+	if user.Role() != domain.RoleManager {
+		t.Errorf("Role() = %q, want %q", user.Role(), domain.RoleManager)
 	}
 	if !user.IsActive() {
 		t.Error("IsActive() = false, want true for a freshly constructed user")
@@ -75,7 +75,7 @@ func TestNewUser_InvalidEmail(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := domain.NewUser(domain.NewID(), tenantID, tt.email, "some-hash", domain.RoleGestor)
+			_, err := domain.NewUser(domain.NewID(), tenantID, tt.email, "some-hash", domain.RoleManager)
 			if err == nil {
 				t.Fatalf("NewUser(email=%q) = nil error, want an error", tt.email)
 			}
@@ -89,7 +89,7 @@ func TestNewUser_InvalidEmail(t *testing.T) {
 func TestNewUser_InvalidPasswordHash(t *testing.T) {
 	tenantID := mustUserTenantID(t)
 
-	_, err := domain.NewUser(domain.NewID(), tenantID, "owner@example.com", "  ", domain.RoleGestor)
+	_, err := domain.NewUser(domain.NewID(), tenantID, "owner@example.com", "  ", domain.RoleManager)
 	if err == nil {
 		t.Fatal("NewUser(passwordHash=blank) = nil error, want an error")
 	}
